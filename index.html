@@ -33,7 +33,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* NAV */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       display: flex; align-items: center; justify-content: space-between;
@@ -54,7 +53,6 @@
       padding: 0.35rem 0.875rem; border-radius: 2px;
     }
 
-    /* HERO */
     .hero {
       min-height: 100vh;
       display: flex; flex-direction: column;
@@ -74,9 +72,7 @@
       letter-spacing: 0.3em; color: var(--mist);
       text-transform: uppercase; margin-bottom: 2rem;
     }
-    .hero-bolt {
-      width: 48px; height: 72px; margin: 0 auto 2.5rem; opacity: 0.7;
-    }
+    .hero-bolt { width: 48px; height: 72px; margin: 0 auto 2.5rem; opacity: 0.7; }
     .hero h1 {
       font-family: var(--font-display);
       font-size: clamp(2.5rem, 7vw, 5.5rem);
@@ -87,11 +83,10 @@
     .hero h1 em { font-style: italic; color: var(--bolt); }
     .hero-sub {
       font-size: clamp(1rem, 2vw, 1.2rem);
-      color: var(--mist); max-width: 500px;
+      color: var(--mist); max-width: 520px;
       margin: 0 auto 3rem; font-weight: 300; line-height: 1.7;
     }
 
-    /* WAITLIST FORM */
     .waitlist {
       display: flex; flex-direction: column; align-items: center; gap: 1rem;
       width: 100%; max-width: 440px; margin: 0 auto;
@@ -119,13 +114,10 @@
       font-size: 0.75rem; font-weight: 700;
       letter-spacing: 0.12em; text-transform: uppercase;
       font-family: var(--font-body);
-      transition: background 0.2s;
-      white-space: nowrap;
+      transition: background 0.2s; white-space: nowrap;
     }
     .waitlist-btn:hover { background: var(--white); }
-    .waitlist-note {
-      font-size: 0.75rem; color: var(--steel); text-align: center;
-    }
+    .waitlist-note { font-size: 0.75rem; color: var(--steel); text-align: center; }
 
     .hero-scroll {
       position: absolute; bottom: 2.5rem; left: 50%; transform: translateX(-50%);
@@ -140,10 +132,7 @@
     @keyframes scrollPulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
 
     /* WHAT IT REPLACES */
-    .replaces {
-      background: var(--off); color: var(--ink);
-      padding: 6rem 2rem;
-    }
+    .replaces { background: var(--off); color: var(--ink); padding: 6rem 2rem; }
     .section-label {
       font-family: var(--font-mono); font-size: 0.7rem;
       letter-spacing: 0.3em; text-transform: uppercase;
@@ -157,7 +146,7 @@
     }
     .section-sub {
       text-align: center; color: var(--mid);
-      max-width: 480px; margin: 0 auto 4rem; font-size: 1.05rem;
+      max-width: 520px; margin: 0 auto 4rem; font-size: 1.05rem; line-height: 1.7;
     }
     .replace-grid {
       display: grid;
@@ -171,48 +160,48 @@
       display: flex; align-items: flex-start; gap: 1rem;
     }
     .replace-icon { font-size: 1.5rem; flex-shrink: 0; margin-top: 0.1rem; }
-    .replace-from {
-      font-size: 0.75rem; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--mid); margin-bottom: 0.25rem;
-    }
+    .replace-from { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mid); margin-bottom: 0.25rem; }
     .replace-to { font-size: 1.05rem; font-weight: 600; color: var(--ink); margin-bottom: 0.25rem; }
     .replace-desc { font-size: 0.875rem; color: var(--mid); line-height: 1.5; }
 
-    /* MANIFESTO */
-    .manifesto {
-      background: var(--charcoal); padding: 6rem 2rem; text-align: center;
+    /* OPEN SOURCE EXPLAINER */
+    .opensource { background: var(--charcoal); padding: 6rem 2rem; }
+    .opensource .section-label { color: var(--mist); }
+    .opensource .section-title { color: var(--white); }
+    .opensource-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 2rem; max-width: 960px; margin: 0 auto;
     }
+    .opensource-card {
+      border-left: 1px solid rgba(122,139,168,0.25);
+      padding-left: 1.5rem;
+    }
+    .opensource-card h3 {
+      font-size: 1rem; font-weight: 600;
+      color: var(--bolt); margin-bottom: 0.75rem;
+      letter-spacing: 0.02em;
+    }
+    .opensource-card p {
+      font-size: 0.9rem; color: var(--mist); line-height: 1.7;
+    }
+
+    /* MANIFESTO */
+    .manifesto { background: var(--black); padding: 6rem 2rem; text-align: center; }
     .manifesto-inner { max-width: 640px; margin: 0 auto; }
     .manifesto blockquote {
       font-family: var(--font-display);
-      font-size: clamp(1.25rem, 3vw, 2rem);
+      font-size: clamp(1.25rem, 3vw, 1.875rem);
       font-weight: 400; color: var(--white);
-      line-height: 1.5; font-style: italic;
-      margin-bottom: 2rem;
+      line-height: 1.55; font-style: italic; margin-bottom: 2rem;
     }
-    .manifesto-body {
-      font-size: 1rem; color: var(--mist);
-      line-height: 1.8; margin-bottom: 2.5rem;
-    }
-    .manifesto-pillars {
-      display: flex; flex-wrap: wrap;
-      justify-content: center; gap: 1rem;
-    }
-    .pillar {
-      font-family: var(--font-mono); font-size: 0.7rem;
-      letter-spacing: 0.2em; text-transform: uppercase;
-      color: var(--mist); border: 1px solid rgba(122,139,168,0.2);
-      padding: 0.4rem 1rem; border-radius: 2px;
-    }
+    .manifesto-body { font-size: 1rem; color: var(--mist); line-height: 1.8; }
 
     /* BOTTOM WAITLIST */
-    .bottom-waitlist {
-      background: var(--black); padding: 6rem 2rem; text-align: center;
-    }
+    .bottom-waitlist { background: var(--charcoal); padding: 6rem 2rem; text-align: center; }
     .bottom-waitlist .section-title { color: var(--white); margin-bottom: 1rem; }
     .bottom-waitlist .section-sub { color: var(--mist); margin-bottom: 3rem; }
 
-    /* FOOTER */
     footer {
       background: var(--black);
       border-top: 1px solid rgba(255,255,255,0.04);
@@ -221,25 +210,17 @@
       align-items: center; gap: 1.5rem; text-align: center;
     }
     .footer-logo { display: flex; align-items: center; gap: 0.5rem; }
-    .footer-tagline {
-      font-size: 0.75rem; letter-spacing: 0.15em;
-      text-transform: uppercase; color: var(--steel);
-    }
+    .footer-tagline { font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--steel); }
     .footer-links { display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center; }
-    .footer-links a {
-      font-size: 0.8rem; color: var(--mist); text-decoration: none;
-      letter-spacing: 0.05em; transition: color 0.2s;
-    }
+    .footer-links a { font-size: 0.8rem; color: var(--mist); text-decoration: none; letter-spacing: 0.05em; transition: color 0.2s; }
     .footer-links a:hover { color: var(--bolt); }
     .footer-copy { font-size: 0.75rem; color: var(--steel); }
 
-    /* RESPONSIVE */
     @media (max-width: 600px) {
       nav { padding: 1rem 1.25rem; }
       .hero { padding: 7rem 1.25rem 5rem; }
-      .replaces, .manifesto, .bottom-waitlist { padding: 4rem 1.25rem; }
+      .replaces, .opensource, .manifesto, .bottom-waitlist { padding: 4rem 1.25rem; }
       .waitlist-row { flex-direction: column; }
-      .waitlist-btn { padding: 0.875rem; }
     }
     @media (prefers-reduced-motion: reduce) { .scroll-line { animation: none; } }
   </style>
@@ -263,17 +244,18 @@
   </svg>
   <h1>Do you trust the <em>tech overlords?</em></h1>
   <p class="hero-sub">
-    Your photos, passwords, and home security live on their servers. 
-    Not yours. We're building the way out. Be first to know when it's ready.
+    Apple, Google, and Amazon have spent twenty years convincing you that 
+    storing your life on their servers is normal. It isn't. 
+    We're building the way out.
   </p>
 
   <div class="waitlist">
-    <p class="waitlist-label">Join the early access list</p>
+    <p class="waitlist-label">Be first to know when we launch</p>
     <div class="waitlist-row">
       <input class="waitlist-input" type="email" placeholder="your@email.com" id="email-input" />
       <button class="waitlist-btn" onclick="submitWaitlist()">Notify me</button>
     </div>
-    <p class="waitlist-note">No spam. Just a single email when we launch.</p>
+    <p class="waitlist-note">No spam. One email when we're ready.</p>
   </div>
 
   <div class="hero-scroll">
@@ -283,9 +265,14 @@
 </section>
 
 <section class="replaces">
-  <p class="section-label">What it will replace</p>
-  <h2 class="section-title">Stop paying rent on your own data.</h2>
-  <p class="section-sub">One install. Your home server replaces five monthly subscriptions — forever.</p>
+  <p class="section-label">What it replaces</p>
+  <h2 class="section-title">They charge you monthly to store your own life.</h2>
+  <p class="section-sub">
+    iCloud. Google Photos. Ring. 1Password. Every service you pay for 
+    is another company with a copy of your data, your habits, and your home.
+    August West replaces all of it with software that runs in your house — 
+    on hardware you own.
+  </p>
 
   <div class="replace-grid">
     <div class="replace-card">
@@ -317,7 +304,7 @@
       <div>
         <div class="replace-from">Replaces HomeKit / Google Home / Alexa</div>
         <div class="replace-to">Your home stays private</div>
-        <div class="replace-desc">Local smart home automation. No cloud. No one listening.</div>
+        <div class="replace-desc">Local smart home automation. No cloud. No one listening in.</div>
       </div>
     </div>
     <div class="replace-card">
@@ -325,43 +312,78 @@
       <div>
         <div class="replace-from">Replaces Ring / Nest / Arlo</div>
         <div class="replace-to">Your footage stays home</div>
-        <div class="replace-desc">AI-powered security cameras that record locally. Your footage is yours.</div>
+        <div class="replace-desc">AI-powered security cameras that record locally. Your footage is yours alone.</div>
       </div>
     </div>
     <div class="replace-card">
       <div class="replace-icon">⚡</div>
       <div>
-        <div class="replace-from">All of the above</div>
+        <div class="replace-from">The bottom line</div>
         <div class="replace-to">$0/month after setup</div>
-        <div class="replace-desc">The average family pays $60/month for these services. August West pays for itself.</div>
+        <div class="replace-desc">The average family pays $60/month for these services. August West pays for itself and answers to nobody.</div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="opensource">
+  <p class="section-label">Built differently</p>
+  <h2 class="section-title" style="color:var(--white);margin-bottom:1rem;">Open source means you can see everything.</h2>
+  <p class="section-sub" style="color:var(--mist);margin-bottom:4rem;">
+    We don't ask you to trust us. We show you exactly how it works 
+    and let you verify it yourself. That's what open source means — 
+    and it's how every piece of August West is built.
+  </p>
+
+  <div class="opensource-grid">
+    <div class="opensource-card">
+      <h3>Nothing is hidden</h3>
+      <p>Every line of code August West uses is publicly readable. 
+      Security researchers, journalists, and curious customers can audit 
+      exactly what runs on your hardware. No black boxes.</p>
+    </div>
+    <div class="opensource-card">
+      <h3>Software built by thousands</h3>
+      <p>The tools we combine — Immich, Vaultwarden, Nextcloud, Home Assistant — 
+      are trusted by millions of people worldwide and maintained by large open 
+      source communities. This isn't experimental. It's proven.</p>
+    </div>
+    <div class="opensource-card">
+      <h3>You can leave anytime</h3>
+      <p>Your data is stored in standard formats on hardware you own. 
+      You never need August West to access it. 
+      If we disappeared tomorrow, your photos, passwords, and files 
+      would still be right there on your shelf.</p>
+    </div>
+    <div class="opensource-card">
+      <h3>We can't read your data</h3>
+      <p>Unlike iCloud or Google, we have no copy of your data and no way 
+      to access it. Nobody can subpoena it from us. 
+      Nobody can sell it. Because we genuinely don't have it.</p>
     </div>
   </div>
 </section>
 
 <section class="manifesto">
   <div class="manifesto-inner">
-    <blockquote>"Your data belongs to you. Not to corporations that profit from it, not to governments that surveil it. To you."</blockquote>
+    <blockquote>
+      "Somewhere along the way, we were convinced that convenience 
+      required surveillance. It doesn't."
+    </blockquote>
     <p class="manifesto-body">
-      August West is being built in the open. Every line of code is public. 
-      Everything runs on hardware you own, in your home. 
-      We can't read your data. Nobody can subpoena it from us. 
-      Because we don't have it.
+      The tools to own your digital life have existed for years. 
+      They just required technical expertise most people don't have — 
+      and time most people won't spend. August West changes that. 
+      One install. Everything running. Your data, home where it belongs.
     </p>
-    <div class="manifesto-pillars">
-      <span class="pillar">Open source</span>
-      <span class="pillar">Auditable</span>
-      <span class="pillar">Zero vendor lock-in</span>
-      <span class="pillar">Radical transparency</span>
-      <span class="pillar">No monthly fees</span>
-    </div>
   </div>
 </section>
 
 <section class="bottom-waitlist">
-  <h2 class="section-title">Be first.</h2>
-  <p class="section-sub">Early access customers get 40% off and a direct line to the people building it.</p>
-
+  <h2 class="section-title">Something worth waiting for.</h2>
+  <p class="section-sub" style="color:var(--mist);margin-bottom:3rem;">
+    We're almost ready. Join the list and we'll let you know the moment you can take back what's yours.
+  </p>
   <div class="waitlist" style="margin: 0 auto;">
     <div class="waitlist-row">
       <input class="waitlist-input" type="email" placeholder="your@email.com" id="email-input-2" />
@@ -389,29 +411,16 @@
 <script>
   function submitWaitlist() {
     const email = document.getElementById('email-input').value.trim();
-    if (!email || !email.includes('@')) {
-      alert('Please enter a valid email address.');
-      return;
-    }
+    if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
     window.location.href = 'mailto:hello@augustwest.org?subject=Early Access Waitlist&body=Please add me to the August West early access list.%0A%0AEmail: ' + encodeURIComponent(email);
   }
-
   function submitWaitlist2() {
     const email = document.getElementById('email-input-2').value.trim();
-    if (!email || !email.includes('@')) {
-      alert('Please enter a valid email address.');
-      return;
-    }
+    if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
     window.location.href = 'mailto:hello@augustwest.org?subject=Early Access Waitlist&body=Please add me to the August West early access list.%0A%0AEmail: ' + encodeURIComponent(email);
   }
-
-  document.getElementById('email-input').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') submitWaitlist();
-  });
-  document.getElementById('email-input-2').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') submitWaitlist2();
-  });
+  document.getElementById('email-input').addEventListener('keypress', function(e) { if (e.key === 'Enter') submitWaitlist(); });
+  document.getElementById('email-input-2').addEventListener('keypress', function(e) { if (e.key === 'Enter') submitWaitlist2(); });
 </script>
-
 </body>
 </html>

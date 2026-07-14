@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>August West — Your Data. Your Power. Your Freedom.</title>
-  <meta name="description" content="Self-hosted privacy infrastructure that replaces iCloud, Google Photos, and 1Password. Your data stays home." />
+  <title>August West — Coming Soon</title>
+  <meta name="description" content="Your photos, passwords, and home security belong to you — not Big Tech. August West is coming." />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -19,161 +19,119 @@
       --ink:      #1a1e2e;
       --mid:      #4a5568;
       --accent:   #8fa8cc;
-
       --font-display: 'Georgia', 'Times New Roman', serif;
       --font-body:    system-ui, -apple-system, 'Segoe UI', sans-serif;
       --font-mono:    'SF Mono', 'Fira Code', 'Courier New', monospace;
     }
 
     html { scroll-behavior: smooth; }
-
     body {
       font-family: var(--font-body);
-      background: var(--off);
-      color: var(--ink);
+      background: var(--black);
+      color: var(--white);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── NAV ── */
+    /* NAV */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       display: flex; align-items: center; justify-content: space-between;
       padding: 1.25rem 2rem;
-      background: rgba(13, 15, 20, 0.92);
+      background: rgba(13,15,20,0.92);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid rgba(255,255,255,0.05);
     }
-
-    .nav-logo {
-      display: flex; align-items: center; gap: 0.625rem;
-      text-decoration: none;
-    }
-
-    .nav-bolt {
-      width: 18px; height: 28px;
-    }
-
+    .nav-logo { display: flex; align-items: center; gap: 0.625rem; text-decoration: none; }
     .nav-wordmark {
-      font-family: var(--font-body);
-      font-weight: 300;
-      font-size: 0.875rem;
-      letter-spacing: 0.2em;
-      color: var(--bolt);
-      text-transform: uppercase;
+      font-weight: 300; font-size: 0.875rem;
+      letter-spacing: 0.2em; color: var(--bolt); text-transform: uppercase;
+    }
+    .nav-badge {
+      font-family: var(--font-mono); font-size: 0.65rem;
+      letter-spacing: 0.15em; text-transform: uppercase;
+      color: var(--mist); border: 1px solid rgba(122,139,168,0.3);
+      padding: 0.35rem 0.875rem; border-radius: 2px;
     }
 
-    .nav-cta {
-      font-size: 0.8rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--mist);
-      text-decoration: none;
-      border: 1px solid rgba(122,139,168,0.3);
-      padding: 0.5rem 1.25rem;
-      border-radius: 2px;
-      transition: color 0.2s, border-color 0.2s;
-    }
-    .nav-cta:hover { color: var(--bolt); border-color: var(--bolt); }
-
-    /* ── HERO ── */
+    /* HERO */
     .hero {
       min-height: 100vh;
-      background: var(--black);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       text-align: center;
       padding: 8rem 2rem 6rem;
-      position: relative;
-      overflow: hidden;
+      position: relative; overflow: hidden;
     }
-
     .hero::before {
       content: '';
       position: absolute; inset: 0;
       background: radial-gradient(ellipse 60% 50% at 50% 40%, rgba(46,54,80,0.6) 0%, transparent 70%);
       pointer-events: none;
     }
-
     .hero-eyebrow {
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.3em;
-      color: var(--mist);
-      text-transform: uppercase;
-      margin-bottom: 2rem;
+      font-family: var(--font-mono); font-size: 0.7rem;
+      letter-spacing: 0.3em; color: var(--mist);
+      text-transform: uppercase; margin-bottom: 2rem;
     }
-
-    .hero-bolt-large {
-      width: 48px; height: 72px;
-      margin: 0 auto 2.5rem;
-      opacity: 0.7;
+    .hero-bolt {
+      width: 48px; height: 72px; margin: 0 auto 2.5rem; opacity: 0.7;
     }
-
     .hero h1 {
       font-family: var(--font-display);
       font-size: clamp(2.5rem, 7vw, 5.5rem);
-      font-weight: 400;
-      color: var(--white);
-      line-height: 1.1;
-      letter-spacing: -0.02em;
-      max-width: 800px;
-      margin: 0 auto 1.5rem;
+      font-weight: 400; color: var(--white);
+      line-height: 1.1; letter-spacing: -0.02em;
+      max-width: 800px; margin: 0 auto 1.5rem;
     }
-
-    .hero h1 em {
-      font-style: italic;
-      color: var(--bolt);
-    }
-
+    .hero h1 em { font-style: italic; color: var(--bolt); }
     .hero-sub {
-      font-size: clamp(1rem, 2vw, 1.25rem);
-      color: var(--mist);
-      max-width: 520px;
-      margin: 0 auto 3rem;
-      font-weight: 300;
-      line-height: 1.7;
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: var(--mist); max-width: 500px;
+      margin: 0 auto 3rem; font-weight: 300; line-height: 1.7;
     }
 
-    .hero-actions {
-      display: flex; gap: 1rem; flex-wrap: wrap;
-      justify-content: center;
+    /* WAITLIST FORM */
+    .waitlist {
+      display: flex; flex-direction: column; align-items: center; gap: 1rem;
+      width: 100%; max-width: 440px; margin: 0 auto;
     }
-
-    .btn-primary {
-      background: var(--bolt);
-      color: var(--black);
-      font-size: 0.85rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      text-decoration: none;
-      padding: 0.875rem 2.5rem;
-      border-radius: 2px;
-      transition: background 0.2s, transform 0.15s;
+    .waitlist-label {
+      font-family: var(--font-mono); font-size: 0.7rem;
+      letter-spacing: 0.2em; text-transform: uppercase; color: var(--mist);
     }
-    .btn-primary:hover { background: var(--white); transform: translateY(-1px); }
-
-    .btn-ghost {
-      color: var(--mist);
-      font-size: 0.85rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      text-decoration: none;
-      padding: 0.875rem 2.5rem;
-      border: 1px solid rgba(122,139,168,0.3);
-      border-radius: 2px;
-      transition: color 0.2s, border-color 0.2s;
+    .waitlist-row {
+      display: flex; width: 100%; gap: 0;
+      border: 1px solid rgba(122,139,168,0.3); border-radius: 2px; overflow: hidden;
     }
-    .btn-ghost:hover { color: var(--bolt); border-color: var(--bolt); }
+    .waitlist-input {
+      flex: 1; background: rgba(255,255,255,0.05);
+      border: none; outline: none;
+      padding: 0.875rem 1.25rem;
+      font-size: 0.9rem; color: var(--white);
+      font-family: var(--font-body);
+    }
+    .waitlist-input::placeholder { color: var(--steel); }
+    .waitlist-btn {
+      background: var(--bolt); color: var(--black);
+      border: none; cursor: pointer;
+      padding: 0.875rem 1.5rem;
+      font-size: 0.75rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      font-family: var(--font-body);
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .waitlist-btn:hover { background: var(--white); }
+    .waitlist-note {
+      font-size: 0.75rem; color: var(--steel); text-align: center;
+    }
 
     .hero-scroll {
       position: absolute; bottom: 2.5rem; left: 50%; transform: translateX(-50%);
       display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
-      color: var(--steel);
-      font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--steel); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;
     }
-
     .scroll-line {
       width: 1px; height: 40px;
       background: linear-gradient(to bottom, var(--steel), transparent);
@@ -181,386 +139,141 @@
     }
     @keyframes scrollPulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
 
-    /* ── WHAT IT REPLACES ── */
+    /* WHAT IT REPLACES */
     .replaces {
-      background: var(--white);
+      background: var(--off); color: var(--ink);
       padding: 6rem 2rem;
     }
-
     .section-label {
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.3em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 1rem;
-      text-align: center;
+      font-family: var(--font-mono); font-size: 0.7rem;
+      letter-spacing: 0.3em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 1rem; text-align: center;
     }
-
     .section-title {
       font-family: var(--font-display);
       font-size: clamp(1.75rem, 4vw, 3rem);
-      font-weight: 400;
-      color: var(--ink);
-      text-align: center;
-      margin-bottom: 1rem;
-      letter-spacing: -0.01em;
+      font-weight: 400; color: var(--ink);
+      text-align: center; margin-bottom: 1rem; letter-spacing: -0.01em;
     }
-
     .section-sub {
-      text-align: center;
-      color: var(--mid);
-      max-width: 480px;
-      margin: 0 auto 4rem;
-      font-size: 1.05rem;
+      text-align: center; color: var(--mid);
+      max-width: 480px; margin: 0 auto 4rem; font-size: 1.05rem;
     }
-
     .replace-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-      max-width: 960px;
-      margin: 0 auto;
+      gap: 1.5rem; max-width: 960px; margin: 0 auto;
     }
-
     .replace-card {
-      background: var(--off);
+      background: var(--white);
       border: 1px solid rgba(0,0,0,0.06);
-      border-radius: 4px;
-      padding: 1.75rem;
+      border-radius: 4px; padding: 1.75rem;
       display: flex; align-items: flex-start; gap: 1rem;
     }
-
-    .replace-icon {
-      font-size: 1.5rem;
-      flex-shrink: 0;
-      margin-top: 0.1rem;
-    }
-
-    .replace-body {}
-
+    .replace-icon { font-size: 1.5rem; flex-shrink: 0; margin-top: 0.1rem; }
     .replace-from {
-      font-size: 0.75rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--mid);
-      margin-bottom: 0.25rem;
+      font-size: 0.75rem; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--mid); margin-bottom: 0.25rem;
     }
+    .replace-to { font-size: 1.05rem; font-weight: 600; color: var(--ink); margin-bottom: 0.25rem; }
+    .replace-desc { font-size: 0.875rem; color: var(--mid); line-height: 1.5; }
 
-    .replace-to {
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: var(--ink);
-      margin-bottom: 0.25rem;
+    /* MANIFESTO */
+    .manifesto {
+      background: var(--charcoal); padding: 6rem 2rem; text-align: center;
     }
-
-    .replace-desc {
-      font-size: 0.875rem;
-      color: var(--mid);
-      line-height: 1.5;
-    }
-
-    /* ── HOW IT WORKS ── */
-    .how {
-      background: var(--charcoal);
-      padding: 6rem 2rem;
-      color: var(--white);
-    }
-
-    .how .section-label { color: var(--mist); }
-    .how .section-title { color: var(--white); }
-    .how .section-sub { color: var(--mist); }
-
-    .steps {
-      max-width: 720px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-
-    .step {
-      display: grid;
-      grid-template-columns: 48px 1fr;
-      gap: 1.5rem;
-      padding: 2rem 0;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-      position: relative;
-    }
-    .step:last-child { border-bottom: none; }
-
-    .step-number {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      color: var(--mist);
-      padding-top: 0.2rem;
-      letter-spacing: 0.1em;
-    }
-
-    .step-content h3 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: var(--white);
-      margin-bottom: 0.5rem;
-    }
-
-    .step-content p {
-      font-size: 0.925rem;
-      color: var(--mist);
-      line-height: 1.6;
-    }
-
-    .step-code {
-      margin-top: 0.75rem;
-      background: rgba(0,0,0,0.3);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 3px;
-      padding: 0.75rem 1rem;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      color: var(--bolt);
-      letter-spacing: 0.02em;
-      overflow-x: auto;
-    }
-
-    /* ── PRICING ── */
-    .pricing {
-      background: var(--off);
-      padding: 6rem 2rem;
-    }
-
-    .pricing-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-      max-width: 960px;
-      margin: 0 auto;
-    }
-
-    .price-card {
-      background: var(--white);
-      border: 1px solid rgba(0,0,0,0.08);
-      border-radius: 4px;
-      padding: 2.5rem 2rem;
-    }
-
-    .price-card.featured {
-      background: var(--charcoal);
-      border-color: var(--steel);
-      color: var(--white);
-    }
-
-    .price-tier {
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.25em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 1rem;
-    }
-
-    .price-card.featured .price-tier { color: var(--mist); }
-
-    .price-amount {
+    .manifesto-inner { max-width: 640px; margin: 0 auto; }
+    .manifesto blockquote {
       font-family: var(--font-display);
-      font-size: 3rem;
-      font-weight: 400;
-      color: var(--ink);
-      line-height: 1;
-      margin-bottom: 0.25rem;
-    }
-
-    .price-card.featured .price-amount { color: var(--white); }
-
-    .price-period {
-      font-size: 0.8rem;
-      color: var(--mid);
-      margin-bottom: 1.5rem;
-    }
-
-    .price-card.featured .price-period { color: var(--mist); }
-
-    .price-desc {
-      font-size: 0.925rem;
-      color: var(--mid);
+      font-size: clamp(1.25rem, 3vw, 2rem);
+      font-weight: 400; color: var(--white);
+      line-height: 1.5; font-style: italic;
       margin-bottom: 2rem;
-      line-height: 1.6;
     }
-
-    .price-card.featured .price-desc { color: var(--mist); }
-
-    .price-features {
-      list-style: none;
-      margin-bottom: 2rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.625rem;
+    .manifesto-body {
+      font-size: 1rem; color: var(--mist);
+      line-height: 1.8; margin-bottom: 2.5rem;
     }
-
-    .price-features li {
-      font-size: 0.875rem;
-      color: var(--mid);
-      padding-left: 1.25rem;
-      position: relative;
+    .manifesto-pillars {
+      display: flex; flex-wrap: wrap;
+      justify-content: center; gap: 1rem;
     }
-    .price-features li::before {
-      content: '→';
-      position: absolute; left: 0;
-      color: var(--accent);
-      font-size: 0.75rem;
-    }
-
-    .price-card.featured .price-features li { color: var(--mist); }
-
-    .price-cta {
-      display: block;
-      text-align: center;
-      padding: 0.875rem;
-      border-radius: 2px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      text-decoration: none;
-      transition: all 0.2s;
-    }
-
-    .price-cta-outline {
-      border: 1px solid rgba(0,0,0,0.15);
-      color: var(--ink);
-    }
-    .price-cta-outline:hover { border-color: var(--ink); }
-
-    .price-cta-solid {
-      background: var(--bolt);
-      color: var(--black);
-    }
-    .price-cta-solid:hover { background: var(--white); }
-
-    /* ── OPEN SOURCE ── */
-    .open {
-      background: var(--black);
-      padding: 6rem 2rem;
-      text-align: center;
-    }
-
-    .open .section-title { color: var(--white); }
-    .open .section-sub { color: var(--mist); margin-bottom: 2.5rem; }
-
-    .open-pillars {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 2rem;
-      max-width: 720px;
-      margin: 0 auto 3rem;
-    }
-
     .pillar {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--mist);
-      border: 1px solid rgba(122,139,168,0.2);
-      padding: 0.5rem 1.25rem;
-      border-radius: 2px;
+      font-family: var(--font-mono); font-size: 0.7rem;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--mist); border: 1px solid rgba(122,139,168,0.2);
+      padding: 0.4rem 1rem; border-radius: 2px;
     }
 
-    /* ── FOOTER ── */
+    /* BOTTOM WAITLIST */
+    .bottom-waitlist {
+      background: var(--black); padding: 6rem 2rem; text-align: center;
+    }
+    .bottom-waitlist .section-title { color: var(--white); margin-bottom: 1rem; }
+    .bottom-waitlist .section-sub { color: var(--mist); margin-bottom: 3rem; }
+
+    /* FOOTER */
     footer {
       background: var(--black);
       border-top: 1px solid rgba(255,255,255,0.04);
       padding: 3rem 2rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1.5rem;
-      text-align: center;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 1.5rem; text-align: center;
     }
-
-    .footer-logo {
-      display: flex; align-items: center; gap: 0.5rem;
-    }
-
+    .footer-logo { display: flex; align-items: center; gap: 0.5rem; }
     .footer-tagline {
-      font-size: 0.75rem;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--steel);
+      font-size: 0.75rem; letter-spacing: 0.15em;
+      text-transform: uppercase; color: var(--steel);
     }
-
-    .footer-links {
-      display: flex; gap: 2rem;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
+    .footer-links { display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center; }
     .footer-links a {
-      font-size: 0.8rem;
-      color: var(--mist);
-      text-decoration: none;
-      letter-spacing: 0.05em;
-      transition: color 0.2s;
+      font-size: 0.8rem; color: var(--mist); text-decoration: none;
+      letter-spacing: 0.05em; transition: color 0.2s;
     }
     .footer-links a:hover { color: var(--bolt); }
+    .footer-copy { font-size: 0.75rem; color: var(--steel); }
 
-    .footer-copy {
-      font-size: 0.75rem;
-      color: var(--steel);
-    }
-
-    /* ── BOLT SVG ── */
-    .bolt-svg path {
-      fill: var(--bolt);
-    }
-
-    /* ── RESPONSIVE ── */
+    /* RESPONSIVE */
     @media (max-width: 600px) {
       nav { padding: 1rem 1.25rem; }
       .hero { padding: 7rem 1.25rem 5rem; }
-      .replaces, .how, .pricing, .open { padding: 4rem 1.25rem; }
-      .hero-actions { flex-direction: column; align-items: center; }
-      .btn-primary, .btn-ghost { width: 100%; max-width: 280px; text-align: center; }
+      .replaces, .manifesto, .bottom-waitlist { padding: 4rem 1.25rem; }
+      .waitlist-row { flex-direction: column; }
+      .waitlist-btn { padding: 0.875rem; }
     }
-
-    @media (prefers-reduced-motion: reduce) {
-      .scroll-line { animation: none; }
-    }
+    @media (prefers-reduced-motion: reduce) { .scroll-line { animation: none; } }
   </style>
 </head>
 <body>
 
-<!-- NAV -->
 <nav>
   <a href="/" class="nav-logo">
-    <svg class="nav-bolt bolt-svg" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M14 0L2 20h8L4 36l18-22h-9L14 0z"/>
+    <svg width="14" height="21" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14 0L2 20h8L4 36l18-22h-9L14 0z" fill="#c8d4e8"/>
     </svg>
     <span class="nav-wordmark">August West</span>
   </a>
-  <a href="mailto:hello@augustwest.org" class="nav-cta">Get in touch</a>
+  <span class="nav-badge">Coming Soon</span>
 </nav>
 
-<!-- HERO -->
 <section class="hero">
   <p class="hero-eyebrow">Digital sovereignty for everyone</p>
-
-  <svg class="hero-bolt-large bolt-svg" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M14 0L2 20h8L4 36l18-22h-9L14 0z"/>
+  <svg class="hero-bolt" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M14 0L2 20h8L4 36l18-22h-9L14 0z" fill="#c8d4e8"/>
   </svg>
-
   <h1>Do you trust the <em>tech overlords?</em></h1>
-
   <p class="hero-sub">
     Your photos, passwords, and home security live on their servers. 
-    Not yours. August West puts it back where it belongs — 
-    in your home, under your control, forever.
+    Not yours. We're building the way out. Be first to know when it's ready.
   </p>
 
-  <div class="hero-actions">
-    <a href="#pricing" class="btn-primary">Get August West</a>
-    <a href="#how" class="btn-ghost">See how it works</a>
+  <div class="waitlist">
+    <p class="waitlist-label">Join the early access list</p>
+    <div class="waitlist-row">
+      <input class="waitlist-input" type="email" placeholder="your@email.com" id="email-input" />
+      <button class="waitlist-btn" onclick="submitWaitlist()">Notify me</button>
+    </div>
+    <p class="waitlist-note">No spam. Just a single email when we launch.</p>
   </div>
 
   <div class="hero-scroll">
@@ -569,186 +282,95 @@
   </div>
 </section>
 
-<!-- WHAT IT REPLACES -->
-<section class="replaces" id="replaces">
-  <p class="section-label">What it replaces</p>
+<section class="replaces">
+  <p class="section-label">What it will replace</p>
   <h2 class="section-title">Stop paying rent on your own data.</h2>
-  <p class="section-sub">One install. Your home server replaces five monthly subscriptions.</p>
+  <p class="section-sub">One install. Your home server replaces five monthly subscriptions — forever.</p>
 
   <div class="replace-grid">
     <div class="replace-card">
       <div class="replace-icon">📸</div>
-      <div class="replace-body">
+      <div>
         <div class="replace-from">Replaces iCloud Photos / Google Photos</div>
-        <div class="replace-to">Immich</div>
-        <div class="replace-desc">Auto-backup, facial recognition, shared albums. Your photos never leave your home.</div>
+        <div class="replace-to">Your photos stay home</div>
+        <div class="replace-desc">Auto-backup, facial recognition, shared albums. Your memories never leave your house.</div>
       </div>
     </div>
-
     <div class="replace-card">
       <div class="replace-icon">🔐</div>
-      <div class="replace-body">
+      <div>
         <div class="replace-from">Replaces iCloud Keychain / 1Password</div>
-        <div class="replace-to">Vaultwarden</div>
-        <div class="replace-desc">End-to-end encrypted password vault. Works on every device. Zero cloud custody.</div>
+        <div class="replace-to">Your passwords stay home</div>
+        <div class="replace-desc">End-to-end encrypted vault. Works on every device. Zero cloud custody.</div>
       </div>
     </div>
-
     <div class="replace-card">
       <div class="replace-icon">📁</div>
-      <div class="replace-body">
+      <div>
         <div class="replace-from">Replaces iCloud Drive / Google Drive</div>
-        <div class="replace-to">Nextcloud</div>
-        <div class="replace-desc">File sync, calendar, contacts, and notes. Your drive, your rules.</div>
+        <div class="replace-to">Your files stay home</div>
+        <div class="replace-desc">File sync, calendar, contacts, notes. Your drive, your rules.</div>
       </div>
     </div>
-
     <div class="replace-card">
       <div class="replace-icon">🏠</div>
-      <div class="replace-body">
+      <div>
         <div class="replace-from">Replaces HomeKit / Google Home / Alexa</div>
-        <div class="replace-to">Home Assistant</div>
-        <div class="replace-desc">Local smart home automation. No cloud required. No one listening.</div>
+        <div class="replace-to">Your home stays private</div>
+        <div class="replace-desc">Local smart home automation. No cloud. No one listening.</div>
       </div>
     </div>
-
     <div class="replace-card">
       <div class="replace-icon">📷</div>
-      <div class="replace-body">
+      <div>
         <div class="replace-from">Replaces Ring / Nest / Arlo</div>
-        <div class="replace-to">Frigate</div>
-        <div class="replace-desc">AI-powered security cameras that record locally. Your footage stays home.</div>
+        <div class="replace-to">Your footage stays home</div>
+        <div class="replace-desc">AI-powered security cameras that record locally. Your footage is yours.</div>
       </div>
     </div>
-
     <div class="replace-card">
       <div class="replace-icon">⚡</div>
-      <div class="replace-body">
+      <div>
         <div class="replace-from">All of the above</div>
         <div class="replace-to">$0/month after setup</div>
-        <div class="replace-desc">The average family pays $60/month for these services. August West pays for itself in under two years.</div>
+        <div class="replace-desc">The average family pays $60/month for these services. August West pays for itself.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- HOW IT WORKS -->
-<section class="how" id="how">
-  <p class="section-label">How it works</p>
-  <h2 class="section-title">One command. Everything running.</h2>
-  <p class="section-sub">August West installs on any Linux machine you already own, or hardware we ship pre-configured.</p>
-
-  <div class="steps">
-    <div class="step">
-      <div class="step-number">01</div>
-      <div class="step-content">
-        <h3>Run the installer</h3>
-        <p>One command on any Ubuntu machine — a spare computer, a mini PC, or hardware we ship pre-configured.</p>
-        <div class="step-code">curl -fsSL https://augustwest.org/install.sh | bash</div>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-number">02</div>
-      <div class="step-content">
-        <h3>Everything installs automatically</h3>
-        <p>Immich, Vaultwarden, Nextcloud, and Home Assistant — all configured, secured, and running in under 15 minutes.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-number">03</div>
-      <div class="step-content">
-        <h3>Point your apps at home</h3>
-        <p>Install the Immich and Bitwarden apps on your phone. Enter your home server address. That's it — you're off the cloud.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-number">04</div>
-      <div class="step-content">
-        <h3>We watch it for you</h3>
-        <p>Optional monitoring keeps an eye on your system. We alert you if anything needs attention — but your data never leaves your home.</p>
-      </div>
+<section class="manifesto">
+  <div class="manifesto-inner">
+    <blockquote>"Your data belongs to you. Not to corporations that profit from it, not to governments that surveil it. To you."</blockquote>
+    <p class="manifesto-body">
+      August West is being built in the open. Every line of code is public. 
+      Everything runs on hardware you own, in your home. 
+      We can't read your data. Nobody can subpoena it from us. 
+      Because we don't have it.
+    </p>
+    <div class="manifesto-pillars">
+      <span class="pillar">Open source</span>
+      <span class="pillar">Auditable</span>
+      <span class="pillar">Zero vendor lock-in</span>
+      <span class="pillar">Radical transparency</span>
+      <span class="pillar">No monthly fees</span>
     </div>
   </div>
 </section>
 
-<!-- PRICING -->
-<section class="pricing" id="pricing">
-  <p class="section-label">Pricing</p>
-  <h2 class="section-title">Own it once.</h2>
-  <p class="section-sub">No subscriptions. No monthly fees. Your data, your hardware, your rules.</p>
+<section class="bottom-waitlist">
+  <h2 class="section-title">Be first.</h2>
+  <p class="section-sub">Early access customers get 40% off and a direct line to the people building it.</p>
 
-  <div class="pricing-grid">
-    <div class="price-card">
-      <div class="price-tier">Self</div>
-      <div class="price-amount">$99</div>
-      <div class="price-period">one time</div>
-      <div class="price-desc">You have a spare computer or mini PC. We give you the stack.</div>
-      <ul class="price-features">
-        <li>Full install script</li>
-        <li>Step-by-step guide</li>
-        <li>Community Discord</li>
-        <li>Open source — audit everything</li>
-        <li>Works on any Ubuntu machine</li>
-      </ul>
-      <a href="mailto:hello@augustwest.org?subject=August West Self" class="price-cta price-cta-outline">Get started</a>
+  <div class="waitlist" style="margin: 0 auto;">
+    <div class="waitlist-row">
+      <input class="waitlist-input" type="email" placeholder="your@email.com" id="email-input-2" />
+      <button class="waitlist-btn" onclick="submitWaitlist2()">Join waitlist</button>
     </div>
-
-    <div class="price-card featured">
-      <div class="price-tier">Home</div>
-      <div class="price-amount">$1,499</div>
-      <div class="price-period">one time · hardware included</div>
-      <div class="price-desc">Pre-configured mini PC ships to your door. Plug in. Everything works.</div>
-      <ul class="price-features">
-        <li>Pre-configured hardware</li>
-        <li>All Self tier features</li>
-        <li>60-minute onboarding call</li>
-        <li>6 months priority support</li>
-        <li>Migration from iCloud or Google</li>
-      </ul>
-      <a href="mailto:hello@augustwest.org?subject=August West Home" class="price-cta price-cta-solid">Get started</a>
-    </div>
-
-    <div class="price-card">
-      <div class="price-tier">Sovereign</div>
-      <div class="price-amount">$3,499</div>
-      <div class="price-period">one time · everything included</div>
-      <div class="price-desc">The complete stack. Hardware, cameras, phone setup, and network segmentation.</div>
-      <ul class="price-features">
-        <li>Everything in Home</li>
-        <li>Security camera system</li>
-        <li>Privacy phone setup</li>
-        <li>Network segmentation</li>
-        <li>12 months priority support</li>
-      </ul>
-      <a href="mailto:hello@augustwest.org?subject=August West Sovereign" class="price-cta price-cta-outline">Get started</a>
-    </div>
+    <p class="waitlist-note">No spam. One email when we launch.</p>
   </div>
 </section>
 
-<!-- OPEN SOURCE -->
-<section class="open" id="open">
-  <p class="section-label">Built in the open</p>
-  <h2 class="section-title">Nothing to hide.</h2>
-  <p class="section-sub">
-    Every line of code is public. Audit the install script. Review what the monitoring agent sends. 
-    Fork it. Improve it. August West has no secrets.
-  </p>
-
-  <div class="open-pillars">
-    <span class="pillar">Open source</span>
-    <span class="pillar">Auditable</span>
-    <span class="pillar">Zero vendor lock-in</span>
-    <span class="pillar">Self-hostable monitoring</span>
-    <span class="pillar">Radical transparency</span>
-  </div>
-
-  <a href="mailto:hello@augustwest.org" class="btn-ghost">hello@augustwest.org</a>
-</section>
-
-<!-- FOOTER -->
 <footer>
   <div class="footer-logo">
     <svg width="14" height="21" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -756,18 +378,40 @@
     </svg>
     <span style="font-size:0.75rem;letter-spacing:0.2em;text-transform:uppercase;color:#4a5568;font-weight:300;">August West</span>
   </div>
-
   <p class="footer-tagline">Your Data. Your Power. Your Freedom.</p>
-
   <div class="footer-links">
-    <a href="mailto:hello@augustwest.org">Contact</a>
-    <a href="https://github.com/augustwest" target="_blank" rel="noopener">GitHub</a>
-    <a href="#replaces">What it replaces</a>
-    <a href="#pricing">Pricing</a>
+    <a href="mailto:hello@augustwest.org">hello@augustwest.org</a>
+    <a href="https://github.com/august-west-org" target="_blank" rel="noopener">GitHub</a>
   </div>
-
   <p class="footer-copy">© 2026 August West. Built in the open.</p>
 </footer>
+
+<script>
+  function submitWaitlist() {
+    const email = document.getElementById('email-input').value.trim();
+    if (!email || !email.includes('@')) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+    window.location.href = 'mailto:hello@augustwest.org?subject=Early Access Waitlist&body=Please add me to the August West early access list.%0A%0AEmail: ' + encodeURIComponent(email);
+  }
+
+  function submitWaitlist2() {
+    const email = document.getElementById('email-input-2').value.trim();
+    if (!email || !email.includes('@')) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+    window.location.href = 'mailto:hello@augustwest.org?subject=Early Access Waitlist&body=Please add me to the August West early access list.%0A%0AEmail: ' + encodeURIComponent(email);
+  }
+
+  document.getElementById('email-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') submitWaitlist();
+  });
+  document.getElementById('email-input-2').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') submitWaitlist2();
+  });
+</script>
 
 </body>
 </html>

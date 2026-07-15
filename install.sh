@@ -253,6 +253,36 @@ cd /opt/augustwest/homeassistant && docker compose pull -q && docker compose up 
 cd /root
 
 # ---------------------------------------------------------------------------
+# Step 6b — public access via Cloudflare Tunnel
+#   Exposes the local services to the internet over a per-customer named tunnel:
+#     photos./vault./files./home./setup.<customer_domain>
+#   Ports 2283/8443/8080/8123/8888 respectively (see aw-tunnel-setup.sh).
+#
+#   Requires CF_API_TOKEN (Zone:DNS:Edit + Account:Cloudflare Tunnel:Edit) and
+#   CF_ZONE_ID (the augustwest.org zone). If either is missing we SKIP tunnel
+#   setup with a warning — the stack still runs (reachable via loopback/Tailscale)
+#   and monitoring falls back to heartbeat-only. Provide both to go public.
+# ---------------------------------------------------------------------------
+: "${CUSTOMER:?set CUSTOMER (August West customer slug)}"
+BASE_DOMAIN="${BASE_DOMAIN:-augustwest.org}"
+CUSTOMER_DOMAIN="${CUSTOMER_DOMAIN:-${CUSTOMER}.${BASE_DOMAIN}}"
+: "${CF_API_TOKEN:=}"
+: "${CF_ZONE_ID:=}"
+TUNNEL_CONFIGURED=false
+if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
+  echo "Configuring Cloudflare Tunnel for ${CUSTOMER_DOMAIN} ..."
+  curl -fsSL -o /tmp/aw-tunnel-setup.sh https://augustwest.org/aw-tunnel-setup.sh
+  CUSTOMER="$CUSTOMER" BASE_DOMAIN="$BASE_DOMAIN" CUSTOMER_DOMAIN="$CUSTOMER_DOMAIN" \
+  CF_API_TOKEN="$CF_API_TOKEN" CF_ZONE_ID="$CF_ZONE_ID" \
+    bash /tmp/aw-tunnel-setup.sh
+  TUNNEL_CONFIGURED=true
+else
+  echo "WARNING: CF_API_TOKEN / CF_ZONE_ID not set — Cloudflare Tunnel NOT configured." >&2
+  echo "         Services stay reachable only via loopback/Tailscale. Re-run with both" >&2
+  echo "         set, or run aw-tunnel-setup.sh manually, to publish the subdomains." >&2
+fi
+
+# ---------------------------------------------------------------------------
 # Step 7 — automatic security updates (unattended-upgrades)
 # ---------------------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
@@ -284,10 +314,18 @@ unattended-upgrade --dry-run --debug   # sanity check
 : "${DEVICE_NAME:=$(hostname)}"
 : "${PROVISION_TOKEN:?set PROVISION_TOKEN}"
 
+# When the tunnel is up, tell the provisioning API where the customer's services
+# live so it creates the four per-service HTTP monitors (photos/vault/files/home)
+# against https://<label>.<customer_domain>. Otherwise omit it -> heartbeat-only.
+DOMAIN_FIELD=""
+if [ "${TUNNEL_CONFIGURED:-false}" = true ]; then
+  DOMAIN_FIELD="\"customer_domain\":\"${CUSTOMER_DOMAIN}\","
+fi
+
 RESP=$(curl -sS -X POST https://provision.augustwest.org/provision \
   -H "Authorization: Bearer ${PROVISION_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "{\"customer\":\"${CUSTOMER}\",\"device_name\":\"${DEVICE_NAME}\",\"hostname\":\"$(hostname)\",\"os\":\"$(. /etc/os-release; echo "$PRETTY_NAME")\",\"arch\":\"$(dpkg --print-architecture)\",\"services\":[\"immich\",\"vaultwarden\",\"nextcloud\",\"homeassistant\"]}")
+  -d "{\"customer\":\"${CUSTOMER}\",\"device_name\":\"${DEVICE_NAME}\",${DOMAIN_FIELD}\"hostname\":\"$(hostname)\",\"os\":\"$(. /etc/os-release; echo "$PRETTY_NAME")\",\"arch\":\"$(dpkg --print-architecture)\",\"services\":[\"immich\",\"vaultwarden\",\"nextcloud\",\"homeassistant\"]}")
 echo "$RESP"
 # `|| true` on each: grep exits 1 when a field is absent, and under
 # `set -euo pipefail` that would abort the install *before* the INTERVAL default

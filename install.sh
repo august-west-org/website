@@ -314,6 +314,12 @@ unattended-upgrade --dry-run --debug   # sanity check
 : "${DEVICE_NAME:=$(hostname)}"
 : "${PROVISION_TOKEN:?set PROVISION_TOKEN}"
 
+# Persist the provisioning token in the sourceable secrets store so re-runs and
+# the heartbeat timer can reuse it (values here are single-quoted; provisioning
+# tokens are [A-Za-z0-9] only, so that is safe). Replace any prior line first.
+sed -i '/^PROVISION_TOKEN=/d' "$SECRETS"
+printf "PROVISION_TOKEN='%s'\n" "$PROVISION_TOKEN" >> "$SECRETS"
+
 # When the tunnel is up, tell the provisioning API where the customer's services
 # live so it creates the four per-service HTTP monitors (photos/vault/files/home)
 # against https://<label>.<customer_domain>. Otherwise omit it -> heartbeat-only.

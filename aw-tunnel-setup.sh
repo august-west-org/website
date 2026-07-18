@@ -3,13 +3,20 @@
 # August West — customer edge tunnel setup
 # =========================================
 # Runs on a customer device AFTER the self-hosted stack is up. It exposes the
-# local services to the public internet over a per-customer Cloudflare Tunnel:
+# local services to the public internet over a per-customer Cloudflare Tunnel.
 #
-#   photos.<customer_domain>  -> http://127.0.0.1:2283   (Immich)
-#   vault.<customer_domain>   -> http://127.0.0.1:8443   (Vaultwarden)
-#   files.<customer_domain>   -> http://127.0.0.1:8080   (Nextcloud)
-#   home.<customer_domain>    -> http://127.0.0.1:8123   (Home Assistant)
-#   setup.<customer_domain>   -> http://127.0.0.1:8888   (onboarding wizard)
+# Hosts are SINGLE-level ("<label>-<customer_domain>") so Cloudflare Universal
+# SSL's *.augustwest.org wildcard covers them. A two-level host such as
+# photos.<customer>.augustwest.org is NOT covered by Universal SSL and fails the
+# edge TLS handshake, so we hyphenate the label into a single DNS label instead:
+#
+#   photos-<customer_domain>  -> http://127.0.0.1:2283   (Immich)
+#   vault-<customer_domain>   -> http://127.0.0.1:8443   (Vaultwarden)
+#   files-<customer_domain>   -> http://127.0.0.1:8080   (Nextcloud)
+#   home-<customer_domain>    -> http://127.0.0.1:8123   (Home Assistant)
+#   setup-<customer_domain>   -> http://127.0.0.1:8888   (onboarding wizard)
+#
+# e.g. with CUSTOMER_DOMAIN=smith.augustwest.org -> photos-smith.augustwest.org
 #
 # What it does, headlessly (no interactive `cloudflared tunnel login`):
 #   1. Installs cloudflared (official .deb) if not already present.
@@ -153,7 +160,7 @@ fi
   echo "credentials-file: ${STATE}/${TUNNEL_ID}.json"
   echo "ingress:"
   for l in "${LABELS[@]}"; do
-    echo "  - hostname: ${l}.${CUSTOMER_DOMAIN}"
+    echo "  - hostname: ${l}-${CUSTOMER_DOMAIN}"
     echo "    service: http://127.0.0.1:${PORTS[$l]}"
   done
   echo "  # catch-all: refuse anything else"
@@ -183,7 +190,7 @@ upsert_cname() {
 }
 log "configuring DNS records:"
 for l in "${LABELS[@]}"; do
-  upsert_cname "${l}.${CUSTOMER_DOMAIN}"
+  upsert_cname "${l}-${CUSTOMER_DOMAIN}"
 done
 
 # --- systemd service --------------------------------------------------------
@@ -210,5 +217,5 @@ systemctl restart aw-cloudflared.service
 
 log "done. Tunnel ${TUNNEL_NAME} active. Public endpoints:"
 for l in "${LABELS[@]}"; do
-  echo "  https://${l}.${CUSTOMER_DOMAIN}  ->  127.0.0.1:${PORTS[$l]}"
+  echo "  https://${l}-${CUSTOMER_DOMAIN}  ->  127.0.0.1:${PORTS[$l]}"
 done

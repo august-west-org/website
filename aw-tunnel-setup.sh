@@ -22,7 +22,9 @@
 #   1. Installs cloudflared (official .deb) if not already present.
 #   2. Creates a named, locally-managed tunnel via the Cloudflare API and writes
 #      its credentials file (we generate the tunnel secret, so no browser cert
-#      is needed). Re-runs reuse the existing tunnel.
+#      is needed). A re-run on the SAME server reuses its tunnel; a run on a NEW
+#      server that shares the CUSTOMER slug takes over — it deletes the previous
+#      tunnel (whose secret it does not hold) and creates its own.
 #   3. Writes /etc/cloudflared/config.yml with the five ingress rules.
 #   4. Creates/updates proxied CNAMEs for each subdomain -> <id>.cfargotunnel.com
 #      via the Cloudflare DNS API.
@@ -39,7 +41,9 @@
 #   CUSTOMER_DOMAIN default: <CUSTOMER>.<BASE_DOMAIN>
 #   TUNNEL_NAME     default: augustwest-<CUSTOMER>
 #
-# Idempotent: safe to re-run. State lives in /etc/cloudflared.
+# Idempotent: re-running on the same server converges to the same result; running
+# on a new server with the same CUSTOMER re-points the tunnel + DNS to that
+# server. State lives in /etc/cloudflared; Cloudflare is treated as authoritative.
 set -euo pipefail
 
 log() { echo "[aw-tunnel] $*"; }
@@ -117,28 +121,44 @@ ACCOUNT_ID="$(cf GET "/zones/${CF_ZONE_ID}" | jq -r '.result.account.id')"
 [ -n "$ACCOUNT_ID" ] && [ "$ACCOUNT_ID" != null ] || die "could not resolve account id from zone ${CF_ZONE_ID}"
 log "account ${ACCOUNT_ID}, domain ${CUSTOMER_DOMAIN}"
 
-# --- ensure the tunnel exists -----------------------------------------------
+# --- ensure the tunnel exists (multi-server safe) ---------------------------
+# Cloudflare is authoritative: enumerate every non-deleted tunnel that carries
+# our name. A tunnel is REUSABLE only if THIS server holds its credentials file
+# (i.e. this server created it). A same-name tunnel created by a *different*
+# server that happens to share the CUSTOMER slug is NOT reusable here: we don't
+# have its secret, so our cloudflared could never connect to it, and a DNS
+# record pointing at it would serve HTTP 530. So we reuse our own tunnel if we
+# find it and delete every other same-name tunnel, otherwise we create a fresh
+# one this server owns. Either way exactly one tunnel ends up backing the name.
+creds_match() {  # $1 = tunnel id -> true iff a matching local creds file exists
+  local id="$1" f="${STATE}/${1}.json"
+  [ -f "$f" ] && [ "$(jq -r '.TunnelID // empty' "$f" 2>/dev/null)" = "$id" ]
+}
+drop_tunnel() { # $1 = tunnel id -> drain connections then delete (best effort)
+  local id="$1"
+  cf DELETE "/accounts/${ACCOUNT_ID}/cfd_tunnel/${id}/connections" >/dev/null 2>&1 || true
+  cf DELETE "/accounts/${ACCOUNT_ID}/cfd_tunnel/${id}"             >/dev/null 2>&1 || true
+  rm -f "${STATE}/${id}.json"
+}
+
+existing_json="$(cf GET "/accounts/${ACCOUNT_ID}/cfd_tunnel?name=${TUNNEL_NAME}&is_deleted=false")"
+mapfile -t EXISTING < <(printf '%s' "$existing_json" | jq -r '.result[].id')
+
 TUNNEL_ID=""
-# Reuse if we have local state AND the tunnel still exists server-side.
-if [ -f "${STATE}/tunnel-id" ]; then
-  cand="$(cat "${STATE}/tunnel-id")"
-  if [ -n "$cand" ] && [ -f "${STATE}/${cand}.json" ] \
-     && cf GET "/accounts/${ACCOUNT_ID}/cfd_tunnel/${cand}" >/dev/null 2>&1; then
-    TUNNEL_ID="$cand"
-    log "reusing tunnel ${TUNNEL_ID}"
+for e in "${EXISTING[@]:-}"; do
+  [ -n "$e" ] || continue
+  if [ -z "$TUNNEL_ID" ] && creds_match "$e"; then
+    TUNNEL_ID="$e"
+    log "reusing tunnel ${TUNNEL_ID} (local credentials match)"
+  else
+    # Foreign (created by another server) or a duplicate — remove it so exactly
+    # one tunnel backs this customer name and DNS can't point at a dead one.
+    log "deleting stale/foreign same-name tunnel ${e}"
+    drop_tunnel "$e"
   fi
-fi
+done
 
 if [ -z "$TUNNEL_ID" ]; then
-  # Remove any stale tunnels of the same name left by a prior failed run so the
-  # create below cannot collide. Draining connections first lets delete succeed.
-  for old in $(cf GET "/accounts/${ACCOUNT_ID}/cfd_tunnel?name=${TUNNEL_NAME}&is_deleted=false" \
-                 | jq -r '.result[].id' 2>/dev/null); do
-    log "cleaning up stale tunnel ${old}"
-    cf DELETE "/accounts/${ACCOUNT_ID}/cfd_tunnel/${old}/connections" >/dev/null 2>&1 || true
-    cf DELETE "/accounts/${ACCOUNT_ID}/cfd_tunnel/${old}" >/dev/null 2>&1 || true
-  done
-
   secret="$(openssl rand -base64 32)"
   create_body="$(jq -nc --arg n "$TUNNEL_NAME" --arg s "$secret" \
     '{name:$n, tunnel_secret:$s, config_src:"local"}')"
@@ -149,9 +169,17 @@ if [ -z "$TUNNEL_ID" ]; then
   jq -nc --arg a "$ACCOUNT_ID" --arg t "$TUNNEL_ID" --arg s "$secret" \
     '{AccountTag:$a, TunnelID:$t, TunnelSecret:$s}' > "${STATE}/${TUNNEL_ID}.json"
   chmod 600 "${STATE}/${TUNNEL_ID}.json"
-  printf '%s\n' "$TUNNEL_ID" > "${STATE}/tunnel-id"
   log "created tunnel ${TUNNEL_NAME} = ${TUNNEL_ID}"
 fi
+
+# Record the winning tunnel id and purge any other local tunnel credential
+# files so on-disk state can never trigger a reuse of a superseded tunnel.
+printf '%s\n' "$TUNNEL_ID" > "${STATE}/tunnel-id"
+for f in "${STATE}"/*.json; do
+  [ -e "$f" ] || continue
+  [ "$f" = "${STATE}/${TUNNEL_ID}.json" ] && continue
+  jq -e '.TunnelID and .TunnelSecret and .AccountTag' "$f" >/dev/null 2>&1 && rm -f "$f"
+done
 
 # --- ingress config ---------------------------------------------------------
 {
@@ -174,14 +202,23 @@ log "wrote + validated ${CFG}"
 
 # --- DNS CNAMEs -------------------------------------------------------------
 TARGET="${TUNNEL_ID}.cfargotunnel.com"
+# Force the name to a SINGLE proxied CNAME -> the current tunnel. We fetch every
+# record for the exact name (any type), reuse the first CNAME (update in place)
+# and delete all other records for that name. This is what guarantees a stale
+# CNAME left pointing at a previous tunnel id — the classic 530 cause — cannot
+# survive a re-run, even one performed from a different server.
 upsert_cname() {
-  local name="$1" id body
-  id="$(cf GET "/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${name}" \
-          | jq -r '.result[0].id // empty')"
+  local name="$1" recs keep body rid
+  recs="$(cf GET "/zones/${CF_ZONE_ID}/dns_records?name=${name}&per_page=100")"
+  keep="$(printf '%s' "$recs" | jq -r '[.result[] | select(.type=="CNAME")][0].id // empty')"
+  for rid in $(printf '%s' "$recs" | jq -r '.result[].id'); do
+    [ "$rid" = "$keep" ] && continue
+    cf DELETE "/zones/${CF_ZONE_ID}/dns_records/${rid}" >/dev/null 2>&1 || true
+  done
   body="$(jq -nc --arg n "$name" --arg c "$TARGET" \
             '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1}')"
-  if [ -n "$id" ]; then
-    cf PUT "/zones/${CF_ZONE_ID}/dns_records/${id}" "$body" >/dev/null
+  if [ -n "$keep" ]; then
+    cf PUT "/zones/${CF_ZONE_ID}/dns_records/${keep}" "$body" >/dev/null
     log "  CNAME ${name} -> ${TARGET} (updated)"
   else
     cf POST "/zones/${CF_ZONE_ID}/dns_records" "$body" >/dev/null

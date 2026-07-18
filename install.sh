@@ -228,6 +228,19 @@ services:
 EOF
 cd /opt/augustwest/nextcloud && docker compose pull -q && docker compose up -d
 # health: curl http://127.0.0.1:8080/status.php  -> {"installed":true,...}
+
+# Trust the customer's public (Cloudflare Tunnel) hostname. Without this,
+# Nextcloud rejects requests whose Host is files-<customer>.augustwest.org with
+# "Trusted domain error" (HTTP 400) and the files monitor stays DOWN. occ only
+# works once first-run install has finished, so wait for status.php to report
+# installed:true before setting it (index 2 -> the public host).
+: "${CUSTOMER:?set CUSTOMER (August West customer slug)}"
+for _ in $(seq 1 60); do
+  curl -fsS http://127.0.0.1:8080/status.php 2>/dev/null | grep -q '"installed":true' && break
+  sleep 5
+done
+docker exec -u www-data nextcloud_app php occ config:system:set \
+  trusted_domains 2 --value="files-${CUSTOMER}.augustwest.org"
 cd /root
 
 # ---------------------------------------------------------------------------
@@ -247,6 +260,25 @@ services:
       - ./config:/config
       - /run/dbus:/run/dbus:ro
     ports: [ "127.0.0.1:8123:8123" ]
+EOF
+# Home Assistant reads /config/configuration.yaml — that is the bind-mounted
+# ./config dir above, i.e. host path /opt/augustwest/homeassistant/config/
+# (NOT /opt/augustwest/homeassistant/configuration.yaml). Write it BEFORE the
+# first start so HA trusts the cloudflared reverse proxy from the outset;
+# otherwise HA answers forwarded requests with "400: Bad Request" and the
+# smarthome monitor stays DOWN. default_config: preserves the normal HA setup
+# (UI, onboarding, integrations); 172.21.0.1 is the Docker bridge gateway
+# cloudflared connects from.
+mkdir -p /opt/augustwest/homeassistant/config
+cat > /opt/augustwest/homeassistant/config/configuration.yaml <<'EOF'
+default_config:
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+    - 172.21.0.1
 EOF
 cd /opt/augustwest/homeassistant && docker compose pull -q && docker compose up -d
 # health: curl -o /dev/null -w '%{http_code}' http://127.0.0.1:8123/  -> 302
@@ -322,7 +354,7 @@ printf "PROVISION_TOKEN='%s'\n" "$PROVISION_TOKEN" >> "$SECRETS"
 
 # When the tunnel is up, tell the provisioning API where the customer's services
 # live so it creates the four per-service HTTP monitors (photos/vault/files/home)
-# against https://<label>.<customer_domain>. Otherwise omit it -> heartbeat-only.
+# against https://<label>-<customer_domain>. Otherwise omit it -> heartbeat-only.
 DOMAIN_FIELD=""
 if [ "${TUNNEL_CONFIGURED:-false}" = true ]; then
   DOMAIN_FIELD="\"customer_domain\":\"${CUSTOMER_DOMAIN}\","

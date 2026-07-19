@@ -30,40 +30,74 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Step 0a — interactive prompts for required identity values
-#   CUSTOMER / PROVISION_TOKEN are required later (Step 5 trusted-domain,
-#   Step 8 registration) and previously failed hard via `:?` if unset. Prompt
-#   for them here when attached to a TTY so an operator can run this script by
-#   hand; non-interactive/CI runs must still export both or the `:?` guards
-#   below fail fast exactly as before.
+# Customer-facing progress display
+#   This script is run directly by the customer, so its normal output is a clean,
+#   reassuring sequence of progress messages rather than raw Docker/apt logs.
+#   `say` prints a friendly step line; `run_quiet` executes a command with its
+#   stdout+stderr captured to a log, surfacing the technical output ONLY if the
+#   command fails (so a customer never sees noise, but a failure is still
+#   debuggable). LOG holds the full technical transcript.
+# ---------------------------------------------------------------------------
+LOG=/var/log/augustwest-install.log
+: > "$LOG" 2>/dev/null || LOG=/tmp/augustwest-install.log
+: > "$LOG" 2>/dev/null || true
+
+say()  { printf '\n\033[1;36m➤ %s\033[0m\n' "$*"; }
+ok()   { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
+note() { printf '  \033[0;33m•\033[0m %s\n' "$*"; }
+
+# Run a command quietly: append its output to $LOG, and only echo that output to
+# the screen if it fails. Returns the command's exit status.
+run_quiet() {
+  echo "\$ $*" >> "$LOG"
+  if "$@" >> "$LOG" 2>&1; then
+    return 0
+  else
+    local rc=$?
+    printf '  \033[1;31m✗ a step reported a problem — recent detail:\033[0m\n' >&2
+    tail -n 20 "$LOG" >&2
+    return $rc
+  fi
+}
+
+echo
+echo "  Welcome to August West — setting up your private home cloud."
+echo "  This takes a few minutes. You can leave it running."
+echo "  (Full technical log: $LOG)"
+
+# ---------------------------------------------------------------------------
+# Step 0a — the ONE question we ask the customer: their family name.
+#   Everything else (operator credentials: PROVISION_TOKEN, CF_API_TOKEN,
+#   CF_ZONE_ID, B2_*) comes from the environment only and is NEVER prompted for
+#   — those are August West operator secrets a customer must never see or enter.
+#   Any operator credential that is absent simply disables its feature (with a
+#   warning) rather than prompting or failing.
 # ---------------------------------------------------------------------------
 if [ -t 0 ]; then
   if [ -z "${CUSTOMER:-}" ]; then
-    read -r -p "Enter customer name (e.g. smith, jones): " CUSTOMER
-  fi
-  if [ -z "${PROVISION_TOKEN:-}" ]; then
-    read -r -s -p "Enter August West provisioning token: " PROVISION_TOKEN
-    echo
+    read -r -p "What's your family name? (e.g. smith, jones): " CUSTOMER
   fi
 fi
 
 # ---------------------------------------------------------------------------
 # Step 0 — scaffolding
 # ---------------------------------------------------------------------------
+say "Preparing your device..."
 mkdir -p /opt/augustwest/{immich,vaultwarden,nextcloud,homeassistant}
 
 # ---------------------------------------------------------------------------
 # Step 0b — swap (4 GB) : host has ~3.7 GB RAM, stack is memory-hungry
 # ---------------------------------------------------------------------------
 if ! swapon --show | grep -q /swapfile; then
-  fallocate -l 4G /swapfile
+  run_quiet fallocate -l 4G /swapfile
   chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
+  run_quiet mkswap /swapfile
+  run_quiet swapon /swapfile
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  sysctl -w vm.swappiness=10
+  run_quiet sysctl -w vm.swappiness=10
   grep -q '^vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=10' >> /etc/sysctl.conf
 fi
+ok "Device prepared."
 
 # ---------------------------------------------------------------------------
 # Step 1 — Docker Engine + Compose plugin (official convenience script)
@@ -71,15 +105,17 @@ fi
 #   convenience script otherwise prints a warning and sleeps 20s before doing a
 #   no-op reinstall.
 # ---------------------------------------------------------------------------
+say "Installing the engine that runs your apps..."
 if docker --version >/dev/null 2>&1; then
-  echo "Docker already installed, skipping"
+  note "Engine already present."
 else
-  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-  sh /tmp/get-docker.sh
+  run_quiet curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  run_quiet sh /tmp/get-docker.sh
 fi
-systemctl enable --now docker
-docker --version
-docker compose version
+run_quiet systemctl enable --now docker
+run_quiet docker --version
+run_quiet docker compose version
+ok "Engine ready."
 
 # ---------------------------------------------------------------------------
 # Step 2 — UFW firewall
@@ -89,13 +125,15 @@ docker compose version
 #   intentionally NOT opened publicly (they'd be dead rules + contradict the
 #   "service ports via Tailscale only" model).
 # ---------------------------------------------------------------------------
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp   comment 'SSH'
-ufw allow 80/tcp   comment 'cloudflared / ACME'
-ufw allow 443/tcp  comment 'cloudflared HTTPS'
-ufw --force enable
-ufw status verbose
+say "Securing your device's firewall..."
+run_quiet ufw default deny incoming
+run_quiet ufw default allow outgoing
+run_quiet ufw allow 22/tcp   comment 'SSH'
+run_quiet ufw allow 80/tcp   comment 'cloudflared / ACME'
+run_quiet ufw allow 443/tcp  comment 'cloudflared HTTPS'
+run_quiet ufw --force enable
+run_quiet ufw status verbose
+ok "Firewall configured."
 
 # ---------------------------------------------------------------------------
 # Step 2b — secrets: generate ONCE, then REUSE on every re-run.
@@ -109,6 +147,7 @@ ufw status verbose
 #   failed for user postgres". Persisting the secrets in a sourceable store keeps
 #   every subsequent run consistent with whatever is already on disk.
 # ---------------------------------------------------------------------------
+say "Generating your private security keys..."
 CRED=/root/augustwest-credentials.txt
 SECRETS=/etc/augustwest/secrets.env
 install -d -m 700 /etc/augustwest
@@ -145,17 +184,20 @@ cat > "$CRED" <<EOF
 [Restic]        RESTIC_PASSWORD=$RESTIC_PASSWORD  (B2 repo config in /etc/augustwest/backup.env)
 EOF
 chmod 600 "$CRED"
+ok "Security keys generated."
 
 # ---------------------------------------------------------------------------
 # Step 3 — Immich (photos) -> 127.0.0.1:2283
 # ---------------------------------------------------------------------------
+say "Setting up your Photo Vault... (this can take a couple of minutes)"
 cd /opt/augustwest/immich
-curl -fsSL -o docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
-curl -fsSL -o .env         https://github.com/immich-app/immich/releases/latest/download/example.env
+run_quiet curl -fsSL -o docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+run_quiet curl -fsSL -o .env         https://github.com/immich-app/immich/releases/latest/download/example.env
 sed -i "s|- '2283:2283'|- '127.0.0.1:2283:2283'|" docker-compose.yml   # loopback only
 sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${IMMICH_DB_PASSWORD}|" .env
 grep -q '^TZ=' .env && sed -i "s|^TZ=.*|TZ=$(cat /etc/timezone 2>/dev/null||echo Etc/UTC)|" .env
-docker compose pull -q && docker compose up -d
+run_quiet docker compose pull -q
+run_quiet docker compose up -d
 
 # Guard: Postgres bakes its password in at first init only (see Step 2b). On a
 # fresh host ./postgres is empty and inits with DB_PASSWORD above. If a leftover
@@ -177,6 +219,7 @@ MSG
   fi
 fi
 # health: curl http://127.0.0.1:2283/api/server/ping  -> {"res":"pong"}
+ok "Photo Vault ready."
 cd /root
 
 # ---------------------------------------------------------------------------
@@ -184,6 +227,7 @@ cd /root
 #   Leave DOMAIN UNSET (empty string is rejected); set it to the full https://
 #   tunnel URL once known. SIGNUPS_ALLOWED=true for onboarding -> flip to false.
 # ---------------------------------------------------------------------------
+say "Setting up your Password Manager..."
 cat > /opt/augustwest/vaultwarden/docker-compose.yml <<EOF
 services:
   vaultwarden:
@@ -199,13 +243,15 @@ services:
     ports:
       - "127.0.0.1:8443:80"
 EOF
-cd /opt/augustwest/vaultwarden && docker compose pull -q && docker compose up -d
+cd /opt/augustwest/vaultwarden && run_quiet docker compose pull -q && run_quiet docker compose up -d
 # health: curl http://127.0.0.1:8443/alive  -> ISO timestamp
+ok "Password Manager ready."
 cd /root
 
 # ---------------------------------------------------------------------------
 # Step 5 — Nextcloud (files) -> 127.0.0.1:8080   [Nextcloud + MariaDB + Redis]
 # ---------------------------------------------------------------------------
+say "Setting up your File Cloud..."
 # `|| true`: don't let a missing default route (pipefail) abort the install; an
 # empty HOST_IP just drops out of the trusted-domains list below.
 HOST_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || true)
@@ -244,8 +290,9 @@ services:
       # behind cloudflared later: also set OVERWRITEPROTOCOL=https + TRUSTED_PROXIES
     volumes: [ "./html:/var/www/html" ]
 EOF
-cd /opt/augustwest/nextcloud && docker compose pull -q && docker compose up -d
+cd /opt/augustwest/nextcloud && run_quiet docker compose pull -q && run_quiet docker compose up -d
 # health: curl http://127.0.0.1:8080/status.php  -> {"installed":true,...}
+note "Waiting for your File Cloud to finish its first-time setup..."
 
 # Trust the customer's public (Cloudflare Tunnel) hostname. Without this,
 # Nextcloud rejects requests whose Host is files-<customer>.augustwest.org with
@@ -257,8 +304,9 @@ for _ in $(seq 1 60); do
   curl -fsS http://127.0.0.1:8080/status.php 2>/dev/null | grep -q '"installed":true' && break
   sleep 5
 done
-docker exec -u www-data nextcloud_app php occ config:system:set \
+run_quiet docker exec -u www-data nextcloud_app php occ config:system:set \
   trusted_domains 2 --value="files-${CUSTOMER}.augustwest.org"
+ok "File Cloud ready."
 cd /root
 
 # ---------------------------------------------------------------------------
@@ -266,6 +314,7 @@ cd /root
 #   Bridge net + loopback bind (localhost-only model). For LAN device
 #   auto-discovery switch to network_mode: host later.
 # ---------------------------------------------------------------------------
+say "Setting up your Smart Home hub..."
 cat > /opt/augustwest/homeassistant/docker-compose.yml <<EOF
 services:
   homeassistant:
@@ -304,8 +353,9 @@ http:
     - ::1
     - 172.16.0.0/12
 EOF
-cd /opt/augustwest/homeassistant && docker compose pull -q && docker compose up -d
+cd /opt/augustwest/homeassistant && run_quiet docker compose pull -q && run_quiet docker compose up -d
 # health: curl -o /dev/null -w '%{http_code}' http://127.0.0.1:8123/  -> 302
+ok "Smart Home hub ready."
 cd /root
 
 # ---------------------------------------------------------------------------
@@ -319,7 +369,8 @@ cd /root
 # ---------------------------------------------------------------------------
 ONBOARD_DIR=/opt/augustwest/onboarding
 if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
-  echo "Waiting for all four services to become healthy before starting the wizard..."
+  say "Getting your setup assistant ready..."
+  note "Making sure all four apps are responding..."
   healthy=0
   for _ in $(seq 1 60); do
     healthy=0
@@ -333,8 +384,8 @@ if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
   if [ "$healthy" -ne 4 ]; then
     echo "WARNING: only ${healthy}/4 services healthy after waiting; starting the wizard anyway (it re-checks health on load)." >&2
   fi
-  ( cd "$ONBOARD_DIR" && docker compose up -d --build )
-  echo "Onboarding wizard container started (127.0.0.1:8888)."
+  ( cd "$ONBOARD_DIR" && run_quiet docker compose up -d --build )
+  ok "Setup assistant ready."
 else
   echo "WARNING: $ONBOARD_DIR/docker-compose.yml not found — onboarding wizard NOT deployed." >&2
   echo "         Ship the onboarding/ directory alongside this script to enable it." >&2
@@ -357,27 +408,22 @@ CUSTOMER_DOMAIN="${CUSTOMER_DOMAIN:-${CUSTOMER}.${BASE_DOMAIN}}"
 : "${CF_API_TOKEN:=}"
 : "${CF_ZONE_ID:=}"
 
-# Prompt interactively for any missing value, but only if we have a TTY. Both
-# are optional -- leaving CF_API_TOKEN blank skips tunnel setup entirely (same
-# as the B2 prompts below), and CF_ZONE_ID is only asked for once a token was
-# actually given.
-if [ -t 0 ]; then
-  if [ -z "$CF_API_TOKEN" ]; then
-    read -r -s -p 'Cloudflare API token (blank to skip public tunnel setup): ' CF_API_TOKEN
-    echo
-  fi
-  if [ -n "$CF_API_TOKEN" ] && [ -z "$CF_ZONE_ID" ]; then
-    read -r -p 'Cloudflare zone ID: ' CF_ZONE_ID
-  fi
-fi
+# CF_API_TOKEN / CF_ZONE_ID are August West OPERATOR credentials. They are read
+# ONLY from the environment and are NEVER prompted for — a customer must never be
+# asked for them. If either is absent we skip Cloudflare Tunnel setup gracefully
+# (the stack still runs over loopback/Tailscale; monitoring falls back to
+# heartbeat-only). No interactive prompt, no hard failure.
 
 TUNNEL_CONFIGURED=false
 if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
-  echo "Configuring Cloudflare Tunnel for ${CUSTOMER_DOMAIN} ..."
-  curl -fsSL -o /tmp/aw-tunnel-setup.sh https://augustwest.org/aw-tunnel-setup.sh
+  say "Connecting your device to the internet securely..."
+  run_quiet curl -fsSL -o /tmp/aw-tunnel-setup.sh https://augustwest.org/aw-tunnel-setup.sh
+  # Env-prefixed external command: assignments export straight into the child
+  # bash, so invoke it directly (not via run_quiet) and log its output.
+  echo "\$ bash /tmp/aw-tunnel-setup.sh (tunnel setup)" >> "$LOG"
   CUSTOMER="$CUSTOMER" BASE_DOMAIN="$BASE_DOMAIN" CUSTOMER_DOMAIN="$CUSTOMER_DOMAIN" \
   CF_API_TOKEN="$CF_API_TOKEN" CF_ZONE_ID="$CF_ZONE_ID" \
-    bash /tmp/aw-tunnel-setup.sh
+    bash /tmp/aw-tunnel-setup.sh >> "$LOG" 2>&1
   TUNNEL_CONFIGURED=true
 
   # Ensure the onboarding wizard's edge route exists. Current aw-tunnel-setup.sh
@@ -386,7 +432,7 @@ if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
   # just before the catch-all 404 rule, then re-validate + reload cloudflared.
   CF_CFG=/etc/cloudflared/config.yml
   if [ -f "$CF_CFG" ] && ! grep -q "setup-${CUSTOMER_DOMAIN}" "$CF_CFG"; then
-    echo "Adding setup-${CUSTOMER_DOMAIN} route to $CF_CFG ..."
+    echo "Adding setup-${CUSTOMER_DOMAIN} route to $CF_CFG ..." >> "$LOG"
     tmp_cfg="$(mktemp)"
     awk -v host="setup-${CUSTOMER_DOMAIN}" '
       /- service: http_status:404/ && !done {
@@ -396,13 +442,16 @@ if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
       }
       { print }
     ' "$CF_CFG" > "$tmp_cfg" && mv "$tmp_cfg" "$CF_CFG"
-    if command -v cloudflared >/dev/null 2>&1 && cloudflared --config "$CF_CFG" tunnel ingress validate; then
+    if command -v cloudflared >/dev/null 2>&1 && cloudflared --config "$CF_CFG" tunnel ingress validate >> "$LOG" 2>&1; then
       systemctl restart aw-cloudflared.service 2>/dev/null || systemctl restart cloudflared 2>/dev/null || true
     else
       echo "WARNING: cloudflared rejected the edited ingress config; leaving tunnel as-is." >&2
     fi
   fi
+  ok "Secure internet access configured."
 else
+  note "Secure internet access not set up yet — your apps work locally for now."
+  # Operator-facing detail (missing CF_API_TOKEN / CF_ZONE_ID env vars):
   echo "WARNING: CF_API_TOKEN / CF_ZONE_ID not set — Cloudflare Tunnel NOT configured." >&2
   echo "         Services stay reachable only via loopback/Tailscale. Re-run with both" >&2
   echo "         set, or run aw-tunnel-setup.sh manually, to publish the subdomains." >&2
@@ -411,9 +460,10 @@ fi
 # ---------------------------------------------------------------------------
 # Step 7 — automatic security updates (unattended-upgrades)
 # ---------------------------------------------------------------------------
+say "Turning on automatic security updates..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq unattended-upgrades apt-listchanges
+run_quiet apt-get update -qq
+run_quiet apt-get install -y -qq unattended-upgrades apt-listchanges
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Download-Upgradeable-Packages "1";
@@ -425,21 +475,32 @@ Unattended-Upgrade::Automatic-Reboot "false";
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 EOF
-systemctl enable --now unattended-upgrades
-unattended-upgrade --dry-run --debug   # sanity check
+run_quiet systemctl enable --now unattended-upgrades
+run_quiet unattended-upgrade --dry-run --debug   # sanity check
+ok "Automatic security updates enabled."
 
 # ---------------------------------------------------------------------------
 # Step 8 — register with August West monitoring + install heartbeat timer
 #   Parameterize these (do NOT commit real tokens):
 #     CUSTOMER, DEVICE_NAME, PROVISION_TOKEN
 # ---------------------------------------------------------------------------
-# Required — no placeholder defaults, so a device can never register under a
-# throwaway identity if the operator forgets to set them. DEVICE_NAME defaults
-# to the host's own name, which is a sensible, unambiguous fallback.
+# CUSTOMER is the customer's own value (prompted at the top). DEVICE_NAME
+# defaults to the host's own name. PROVISION_TOKEN is an August West OPERATOR
+# credential read ONLY from the environment (never prompted) — if it is absent we
+# skip registration + the heartbeat timer entirely, with a warning, rather than
+# prompting or failing. The stack itself is fully functional without it.
 : "${CUSTOMER:?set CUSTOMER (August West customer slug)}"
 : "${DEVICE_NAME:=$(hostname)}"
-: "${PROVISION_TOKEN:?set PROVISION_TOKEN}"
+: "${PROVISION_TOKEN:=}"
 
+if [ -z "$PROVISION_TOKEN" ]; then
+  note "Remote monitoring not set up — all your apps are fully working."
+  # Operator-facing detail (missing PROVISION_TOKEN env var):
+  echo "WARNING: PROVISION_TOKEN not set — device NOT registered with August West" >&2
+  echo "         monitoring and no heartbeat timer was installed. Re-run with" >&2
+  echo "         PROVISION_TOKEN exported to enable monitoring." >&2
+else
+say "Registering your device with August West support..."
 # Persist the provisioning token in the sourceable secrets store so re-runs and
 # the heartbeat timer can reuse it (values here are single-quoted; provisioning
 # tokens are [A-Za-z0-9] only, so that is safe). Replace any prior line first.
@@ -458,7 +519,7 @@ RESP=$(curl -sS -X POST https://provision.augustwest.org/provision \
   -H "Authorization: Bearer ${PROVISION_TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"customer\":\"${CUSTOMER}\",\"device_name\":\"${DEVICE_NAME}\",${DOMAIN_FIELD}\"hostname\":\"$(hostname)\",\"os\":\"$(. /etc/os-release; echo "$PRETTY_NAME")\",\"arch\":\"$(dpkg --print-architecture)\",\"services\":[\"immich\",\"vaultwarden\",\"nextcloud\",\"homeassistant\"]}")
-echo "$RESP"
+echo "$RESP" >> "$LOG"
 # `|| true` on each: grep exits 1 when a field is absent, and under
 # `set -euo pipefail` that would abort the install *before* the INTERVAL default
 # below could apply. Let them yield empty and fall back explicitly.
@@ -508,16 +569,19 @@ Unit=augustwest-heartbeat.service
 [Install]
 WantedBy=timers.target
 EOF
-systemctl daemon-reload
-systemctl enable --now augustwest-heartbeat.timer
+run_quiet systemctl daemon-reload
+run_quiet systemctl enable --now augustwest-heartbeat.timer
+ok "Device registered — remote monitoring is on."
+fi
 
 # ---------------------------------------------------------------------------
 # Step 8b — Restic backups of /opt/augustwest -> Backblaze B2, daily @ 03:00
 #   Encryption password: RESTIC_PASSWORD (generated in Step 2b, persisted in
-#   $SECRETS). Repository is Backblaze B2; its credentials must be supplied via
-#   the environment (B2_ACCOUNT_ID / B2_ACCOUNT_KEY / B2_BUCKET) or entered
-#   interactively below. If none are provided, backup config is SKIPPED with a
-#   warning — the rest of the install is unaffected.
+#   $SECRETS). Repository is Backblaze B2; its credentials are August West
+#   OPERATOR values supplied ONLY via the environment (B2_ACCOUNT_ID /
+#   B2_ACCOUNT_KEY / B2_BUCKET) and are NEVER prompted for. If any is missing,
+#   backup config is SKIPPED with a warning — the rest of the install is
+#   unaffected.
 #
 #   Retention (applied after each backup): 7 daily, 4 weekly, 12 monthly.
 #   Runtime log: /var/log/augustwest-backup.log
@@ -526,23 +590,17 @@ systemctl enable --now augustwest-heartbeat.timer
 : "${B2_ACCOUNT_KEY:=}"
 : "${B2_BUCKET:=}"
 
-# Prompt interactively for any missing value, but only if we have a TTY.
-if [ -t 0 ]; then
-  [ -n "$B2_ACCOUNT_ID" ]  || read -r -p 'Backblaze B2 account/key ID (blank to skip backups): ' B2_ACCOUNT_ID
-  if [ -n "$B2_ACCOUNT_ID" ]; then
-    [ -n "$B2_ACCOUNT_KEY" ] || read -r -s -p 'Backblaze B2 application key: ' B2_ACCOUNT_KEY; echo
-    [ -n "$B2_BUCKET" ]      || read -r -p 'Backblaze B2 bucket name: ' B2_BUCKET
-  fi
-fi
-
 if [ -z "$B2_ACCOUNT_ID" ] || [ -z "$B2_ACCOUNT_KEY" ] || [ -z "$B2_BUCKET" ]; then
+  note "Automatic cloud backups not set up yet."
+  # Operator-facing detail (missing B2_* env vars):
   echo "WARNING: B2 credentials not provided — backup is NOT configured." >&2
   echo "         Re-run with B2_ACCOUNT_ID / B2_ACCOUNT_KEY / B2_BUCKET set to enable Restic backups." >&2
 else
+  say "Setting up automatic encrypted cloud backups..."
   # restic from the distro repo (Ubuntu 24.04+ ships a recent enough version)
   if ! command -v restic >/dev/null 2>&1; then
-    apt-get update -qq
-    apt-get install -y -qq restic
+    run_quiet apt-get update -qq
+    run_quiet apt-get install -y -qq restic
   fi
 
   # Backup environment consumed by the systemd unit and manual runs. Contains
@@ -561,7 +619,7 @@ EOF
   set -a; . "$BACKUP_ENV"; set +a
   # Hard-fail if init fails when creds WERE provided: a bad credential should
   # stop the install rather than leave a broken backup timer behind (set -e).
-  restic snapshots >/dev/null 2>&1 || restic init
+  restic snapshots >/dev/null 2>&1 || run_quiet restic init
 
   # Backup runner: back up /opt/augustwest, prune to the retention policy, all
   # output appended to the log with timestamps.
@@ -600,9 +658,10 @@ Unit=augustwest-backup.service
 [Install]
 WantedBy=timers.target
 EOF
-  systemctl daemon-reload
-  systemctl enable --now augustwest-backup.timer
-  echo "Restic backups configured: daily @ 03:00 -> b2:${B2_BUCKET}:augustwest-$(hostname) (log: /var/log/augustwest-backup.log)"
+  run_quiet systemctl daemon-reload
+  run_quiet systemctl enable --now augustwest-backup.timer
+  echo "Restic backups configured: daily @ 03:00 -> b2:${B2_BUCKET}:augustwest-$(hostname) (log: /var/log/augustwest-backup.log)" >> "$LOG"
+  ok "Automatic cloud backups enabled (nightly)."
 fi
 
 # ---------------------------------------------------------------------------
@@ -613,7 +672,8 @@ fi
 #   passed in the URL as ?t=... (the frontend stores it and strips it from the
 #   address bar).
 # ---------------------------------------------------------------------------
-echo "Install complete. Credentials in /root/augustwest-credentials.txt"
+printf '\n\033[1;32m✓ All done! Your private home cloud is ready.\033[0m\n'
+echo "  (Technical details saved for support: /root/augustwest-credentials.txt, $LOG)"
 
 if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
   # Force the wizard to create its setup token (any authenticated route triggers
@@ -630,9 +690,9 @@ if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
 
   echo
   echo "==============================================================="
-  echo " August West setup wizard"
+  echo " One last step — finish setup"
   echo "==============================================================="
-  echo " Open this on the customer's phone or laptop to finish setup:"
+  echo " Open this on your phone or laptop to finish setting things up:"
   echo
   echo "   ${SETUP_URL}"
   echo

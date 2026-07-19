@@ -414,16 +414,80 @@ EOF
   cd /root
 fi
 
+ONBOARD_DIR=/opt/augustwest/onboarding
+
+# ---------------------------------------------------------------------------
+# Step 6-pre — fetch the onboarding wizard source from GitHub
+#   The wizard (Step 6a) deploys from /opt/augustwest/onboarding, but that source
+#   is NOT bundled with this script — pull it from the PUBLIC august-west-org/
+#   install repo (its onboarding/ subdirectory) now, so a plain `curl | bash` of
+#   this script is self-contained. The repo is public, so NO auth/token is needed
+#   (customers never hold operator credentials), and we avoid a hard git
+#   dependency by downloading the branch tarball and unpacking ONLY the
+#   onboarding/ subdir with curl + tar. If that path fails and git is present, we
+#   fall back to a sparse checkout of just that subdir. Fetch attempts are logged
+#   quietly (not via run_quiet) so a recoverable miss doesn't alarm the customer;
+#   we surface our own message instead. Already-present source (a re-run, or an
+#   operator who pre-seeded the dir) is left untouched.
+# ---------------------------------------------------------------------------
+ONBOARD_REPO=august-west-org/install
+ONBOARD_BRANCH=main
+if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
+  note "Setup assistant source already present — keeping it."
+else
+  say "Downloading your setup assistant..."
+  fetched=false
+
+  # Primary: branch tarball -> extract only the onboarding/ subdir (curl + tar,
+  # no git, no auth). find locates onboarding/ under the tarball's top dir
+  # (github names it <repo>-<branch>/), guarding against branch-name changes.
+  tmp_tar="$(mktemp)"; tmp_ex="$(mktemp -d)"
+  if curl -fsSL -o "$tmp_tar" \
+       "https://codeload.github.com/${ONBOARD_REPO}/tar.gz/refs/heads/${ONBOARD_BRANCH}" >>"$LOG" 2>&1 \
+     && tar -xzf "$tmp_tar" -C "$tmp_ex" >>"$LOG" 2>&1; then
+    src_dir="$(find "$tmp_ex" -maxdepth 2 -type d -name onboarding | head -n1)"
+    if [ -n "$src_dir" ] && [ -f "$src_dir/docker-compose.yml" ]; then
+      mkdir -p "$ONBOARD_DIR"
+      cp -a "$src_dir"/. "$ONBOARD_DIR"/   # -a preserves dotfiles (.dockerignore)
+      fetched=true
+    fi
+  fi
+  rm -rf "$tmp_tar" "$tmp_ex"
+
+  # Fallback: sparse git checkout of just the onboarding/ subdir.
+  if [ "$fetched" != true ] && command -v git >/dev/null 2>&1; then
+    note "Retrying the download via git..."
+    tmp_git="$(mktemp -d)"
+    if git clone --depth 1 --filter=blob:none --sparse \
+         "https://github.com/${ONBOARD_REPO}.git" "$tmp_git" >>"$LOG" 2>&1 \
+       && ( cd "$tmp_git" && git sparse-checkout set onboarding >>"$LOG" 2>&1 ) \
+       && [ -f "$tmp_git/onboarding/docker-compose.yml" ]; then
+      mkdir -p "$ONBOARD_DIR"
+      cp -a "$tmp_git/onboarding/." "$ONBOARD_DIR"/
+      fetched=true
+    fi
+    rm -rf "$tmp_git"
+  fi
+
+  if [ "$fetched" = true ]; then
+    ok "Setup assistant downloaded."
+  else
+    echo "WARNING: could not download the onboarding wizard from ${ONBOARD_REPO}" >&2
+    echo "         (onboarding/ subdir) — the wizard step below will be skipped." >&2
+    echo "         The rest of the stack still works; re-run once GitHub is" >&2
+    echo "         reachable, or pre-seed $ONBOARD_DIR manually." >&2
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # Step 6a — onboarding wizard (August West setup UI) -> 127.0.0.1:8888
-#   Runs as a container built from /opt/augustwest/onboarding (shipped alongside
-#   this script). The wizard's first screen is a health gate and its account
+#   Runs as a container built from /opt/augustwest/onboarding (downloaded in
+#   Step 6-pre). The wizard's first screen is a health gate and its account
 #   step calls each service's API, so wait until all four answer their health
 #   checks before starting it. Loopback-only, like every other service; the
 #   Cloudflare Tunnel's setup-<customer_domain> route (added in Step 6b) is what
 #   exposes it. restart: unless-stopped keeps it up across reboots.
 # ---------------------------------------------------------------------------
-ONBOARD_DIR=/opt/augustwest/onboarding
 if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
   say "Getting your setup assistant ready..."
   note "Making sure all four apps are responding..."

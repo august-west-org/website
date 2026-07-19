@@ -26,7 +26,10 @@
 #
 # Generated secrets are written to /root/augustwest-credentials.txt (chmod 600).
 #
-# This script is idempotent-ish but intended for a fresh host. Read before rerun.
+# This script is safe to re-run. Re-runs REUSE existing secrets, SKIP services
+# that are already running and healthy, and repair a Postgres cluster whose
+# on-disk password drifted from the generated one (see Step 3) rather than
+# crash-looping or destroying data.
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -58,6 +61,14 @@ run_quiet() {
     tail -n 20 "$LOG" >&2
     return $rc
   fi
+}
+
+# Reinstall guard: true iff a container is running AND its health URL answers.
+# Used to skip re-deploying a service that is already up and healthy.
+#   $1 = container name   $2 = health-check URL
+service_healthy() {
+  [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ] \
+    && curl -fsS -o /dev/null --max-time 5 "$2" 2>/dev/null
 }
 
 echo
@@ -95,6 +106,10 @@ if ! swapon --show | grep -q /swapfile; then
   run_quiet swapon /swapfile
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
   run_quiet sysctl -w vm.swappiness=10
+  # Persist swappiness. /etc/sysctl.conf does not exist on some minimal images;
+  # grep-ing a missing file errors under `set -e`, and appending would target a
+  # non-existent path — so create it first if needed, then check-and-append.
+  [ -f /etc/sysctl.conf ] || touch /etc/sysctl.conf
   grep -q '^vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=10' >> /etc/sysctl.conf
 fi
 ok "Device prepared."
@@ -190,37 +205,66 @@ ok "Security keys generated."
 # Step 3 — Immich (photos) -> 127.0.0.1:2283
 # ---------------------------------------------------------------------------
 say "Setting up your Photo Vault... (this can take a couple of minutes)"
-cd /opt/augustwest/immich
-run_quiet curl -fsSL -o docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
-run_quiet curl -fsSL -o .env         https://github.com/immich-app/immich/releases/latest/download/example.env
-sed -i "s|- '2283:2283'|- '127.0.0.1:2283:2283'|" docker-compose.yml   # loopback only
-sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${IMMICH_DB_PASSWORD}|" .env
-grep -q '^TZ=' .env && sed -i "s|^TZ=.*|TZ=$(cat /etc/timezone 2>/dev/null||echo Etc/UTC)|" .env
-run_quiet docker compose pull -q
-run_quiet docker compose up -d
+if service_healthy immich_server http://127.0.0.1:2283/api/server/ping; then
+  ok "Photo Vault already running"
+else
+  cd /opt/augustwest/immich
+  run_quiet curl -fsSL -o docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+  run_quiet curl -fsSL -o .env         https://github.com/immich-app/immich/releases/latest/download/example.env
+  sed -i "s|- '2283:2283'|- '127.0.0.1:2283:2283'|" docker-compose.yml   # loopback only
+  sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${IMMICH_DB_PASSWORD}|" .env
+  grep -q '^TZ=' .env && sed -i "s|^TZ=.*|TZ=$(cat /etc/timezone 2>/dev/null||echo Etc/UTC)|" .env
 
-# Guard: Postgres bakes its password in at first init only (see Step 2b). On a
-# fresh host ./postgres is empty and inits with DB_PASSWORD above. If a leftover
-# cluster is present whose password differs (e.g. a stale ./postgres whose secret
-# was lost), assert it now with a clear remedy instead of leaving a crash-loop.
-if [ -f postgres/PG_VERSION ]; then
-  for _ in $(seq 1 30); do docker exec immich_postgres pg_isready -q 2>/dev/null && break; sleep 2; done
-  if ! docker exec -e PGPASSWORD="${IMMICH_DB_PASSWORD}" immich_postgres \
-         psql -h 127.0.0.1 -U postgres -d immich -tAc 'select 1' >/dev/null 2>&1; then
-    cat >&2 <<MSG
-FATAL: Immich Postgres rejects the configured DB_PASSWORD.
-  The existing cluster in $(pwd)/postgres was initialized with a different password.
-  If it holds no data you need:   docker compose down && rm -rf postgres && docker compose up -d
-  To keep the data, align the cluster password to the one in .env:
-    docker exec -i immich_postgres psql -U postgres \\
-      -c "ALTER USER postgres PASSWORD '${IMMICH_DB_PASSWORD}';"
-MSG
-    exit 1
+  # -------------------------------------------------------------------------
+  # Reinstall safety for the Postgres cluster.
+  #   Postgres bakes its superuser password in at first init ONLY (on an empty
+  #   data dir); afterwards the DB_PASSWORD env var is ignored. A leftover
+  #   ./postgres from a previous install therefore keeps its OLD password, so
+  #   the freshly-sourced DB_PASSWORD in .env may not match and Immich would
+  #   crash-loop on "password authentication failed for user postgres".
+  #
+  #   Handle it automatically instead of failing:
+  #     - No real photo data on disk  -> remove ./postgres and let it re-init
+  #       cleanly with the current password.
+  #     - Real data present           -> preserve it and re-align the on-disk
+  #       password to .env via ALTER USER (local socket = trust/peer auth, so
+  #       this works even though the TCP password no longer matches).
+  # -------------------------------------------------------------------------
+  PG_DIR=/opt/augustwest/immich/postgres
+  if [ -f "$PG_DIR/PG_VERSION" ]; then
+    note "Found an existing Photo Vault database — checking it..."
+    # Bring up just the database container so we can inspect it. (Its own baked
+    # password is unaffected by any .env drift, so it starts fine regardless.)
+    run_quiet docker compose up -d database || run_quiet docker compose up -d
+    for _ in $(seq 1 30); do docker exec immich_postgres pg_isready -q 2>/dev/null && break; sleep 2; done
+    # Count real user tables (anything outside the built-in system schemas).
+    # Local socket connections authenticate via trust/peer, so no password is
+    # needed here regardless of the cluster's current password.
+    TABLES=$(docker exec immich_postgres psql -U postgres -d immich -tAc \
+      "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema');" \
+      2>/dev/null | tr -d '[:space:]' || true)
+    if [ -n "$TABLES" ] && [ "$TABLES" -gt 0 ] 2>/dev/null; then
+      ok "Found existing Photo Vault data - preserving your photos"
+      # Re-align the on-disk password to the one Immich will connect with.
+      if docker exec immich_postgres psql -U postgres \
+           -c "ALTER USER postgres PASSWORD '${IMMICH_DB_PASSWORD}';" >/dev/null 2>&1; then
+        ok "Photo database password re-aligned."
+      else
+        note "Could not re-align the database password automatically (see $LOG)."
+      fi
+    else
+      note "No photos stored yet — resetting the database for a clean install."
+      run_quiet docker compose down || true
+      rm -rf "$PG_DIR"
+    fi
   fi
+
+  run_quiet docker compose pull -q
+  run_quiet docker compose up -d
+  # health: curl http://127.0.0.1:2283/api/server/ping  -> {"res":"pong"}
+  ok "Photo Vault ready."
+  cd /root
 fi
-# health: curl http://127.0.0.1:2283/api/server/ping  -> {"res":"pong"}
-ok "Photo Vault ready."
-cd /root
 
 # ---------------------------------------------------------------------------
 # Step 4 — Vaultwarden (passwords) -> 127.0.0.1:8443
@@ -228,7 +272,10 @@ cd /root
 #   tunnel URL once known. SIGNUPS_ALLOWED=true for onboarding -> flip to false.
 # ---------------------------------------------------------------------------
 say "Setting up your Password Manager..."
-cat > /opt/augustwest/vaultwarden/docker-compose.yml <<EOF
+if service_healthy vaultwarden http://127.0.0.1:8443/alive; then
+  ok "Password Manager already running"
+else
+  cat > /opt/augustwest/vaultwarden/docker-compose.yml <<EOF
 services:
   vaultwarden:
     image: vaultwarden/server:latest
@@ -243,19 +290,23 @@ services:
     ports:
       - "127.0.0.1:8443:80"
 EOF
-cd /opt/augustwest/vaultwarden && run_quiet docker compose pull -q && run_quiet docker compose up -d
-# health: curl http://127.0.0.1:8443/alive  -> ISO timestamp
-ok "Password Manager ready."
-cd /root
+  cd /opt/augustwest/vaultwarden && run_quiet docker compose pull -q && run_quiet docker compose up -d
+  # health: curl http://127.0.0.1:8443/alive  -> ISO timestamp
+  ok "Password Manager ready."
+  cd /root
+fi
 
 # ---------------------------------------------------------------------------
 # Step 5 — Nextcloud (files) -> 127.0.0.1:8080   [Nextcloud + MariaDB + Redis]
 # ---------------------------------------------------------------------------
 say "Setting up your File Cloud..."
-# `|| true`: don't let a missing default route (pipefail) abort the install; an
-# empty HOST_IP just drops out of the trusted-domains list below.
-HOST_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || true)
-cat > /opt/augustwest/nextcloud/docker-compose.yml <<EOF
+if service_healthy nextcloud_app http://127.0.0.1:8080/status.php; then
+  ok "File Cloud already running"
+else
+  # `|| true`: don't let a missing default route (pipefail) abort the install; an
+  # empty HOST_IP just drops out of the trusted-domains list below.
+  HOST_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || true)
+  cat > /opt/augustwest/nextcloud/docker-compose.yml <<EOF
 services:
   db:
     image: mariadb:11
@@ -290,24 +341,25 @@ services:
       # behind cloudflared later: also set OVERWRITEPROTOCOL=https + TRUSTED_PROXIES
     volumes: [ "./html:/var/www/html" ]
 EOF
-cd /opt/augustwest/nextcloud && run_quiet docker compose pull -q && run_quiet docker compose up -d
-# health: curl http://127.0.0.1:8080/status.php  -> {"installed":true,...}
-note "Waiting for your File Cloud to finish its first-time setup..."
+  cd /opt/augustwest/nextcloud && run_quiet docker compose pull -q && run_quiet docker compose up -d
+  # health: curl http://127.0.0.1:8080/status.php  -> {"installed":true,...}
+  note "Waiting for your File Cloud to finish its first-time setup..."
 
-# Trust the customer's public (Cloudflare Tunnel) hostname. Without this,
-# Nextcloud rejects requests whose Host is files-<customer>.augustwest.org with
-# "Trusted domain error" (HTTP 400) and the files monitor stays DOWN. occ only
-# works once first-run install has finished, so wait for status.php to report
-# installed:true before setting it (index 2 -> the public host).
-: "${CUSTOMER:?set CUSTOMER (August West customer slug)}"
-for _ in $(seq 1 60); do
-  curl -fsS http://127.0.0.1:8080/status.php 2>/dev/null | grep -q '"installed":true' && break
-  sleep 5
-done
-run_quiet docker exec -u www-data nextcloud_app php occ config:system:set \
-  trusted_domains 2 --value="files-${CUSTOMER}.augustwest.org"
-ok "File Cloud ready."
-cd /root
+  # Trust the customer's public (Cloudflare Tunnel) hostname. Without this,
+  # Nextcloud rejects requests whose Host is files-<customer>.augustwest.org with
+  # "Trusted domain error" (HTTP 400) and the files monitor stays DOWN. occ only
+  # works once first-run install has finished, so wait for status.php to report
+  # installed:true before setting it (index 2 -> the public host).
+  : "${CUSTOMER:?set CUSTOMER (August West customer slug)}"
+  for _ in $(seq 1 60); do
+    curl -fsS http://127.0.0.1:8080/status.php 2>/dev/null | grep -q '"installed":true' && break
+    sleep 5
+  done
+  run_quiet docker exec -u www-data nextcloud_app php occ config:system:set \
+    trusted_domains 2 --value="files-${CUSTOMER}.augustwest.org"
+  ok "File Cloud ready."
+  cd /root
+fi
 
 # ---------------------------------------------------------------------------
 # Step 6 — Home Assistant (smart home) -> 127.0.0.1:8123
@@ -315,7 +367,10 @@ cd /root
 #   auto-discovery switch to network_mode: host later.
 # ---------------------------------------------------------------------------
 say "Setting up your Smart Home hub..."
-cat > /opt/augustwest/homeassistant/docker-compose.yml <<EOF
+if service_healthy homeassistant http://127.0.0.1:8123/manifest.json; then
+  ok "Smart Home hub already running"
+else
+  cat > /opt/augustwest/homeassistant/docker-compose.yml <<EOF
 services:
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
@@ -328,22 +383,22 @@ services:
       - /run/dbus:/run/dbus:ro
     ports: [ "127.0.0.1:8123:8123" ]
 EOF
-# Home Assistant reads /config/configuration.yaml — that is the bind-mounted
-# ./config dir above, i.e. host path /opt/augustwest/homeassistant/config/
-# (NOT /opt/augustwest/homeassistant/configuration.yaml). Write it BEFORE the
-# first start so HA trusts the cloudflared reverse proxy from the outset;
-# otherwise HA answers forwarded requests with "400: Bad Request" (surfacing as
-# HTTP 502 at the tunnel) and the smarthome monitor stays DOWN. default_config:
-# preserves the normal HA setup (UI, onboarding, integrations).
-#
-# trusted_proxies must include whatever bridge gateway cloudflared connects
-# from. Docker assigns bridge-network gateways non-deterministically (172.17/
-# 172.18/172.21/... depending on network creation order), so pinning ONE IP is
-# fragile -- a differently-numbered gateway leaves HA rejecting every forwarded
-# request. Trust the whole Docker private bridge range (172.16.0.0/12) instead,
-# which covers every gateway Docker can hand out.
-mkdir -p /opt/augustwest/homeassistant/config
-cat > /opt/augustwest/homeassistant/config/configuration.yaml <<'EOF'
+  # Home Assistant reads /config/configuration.yaml — that is the bind-mounted
+  # ./config dir above, i.e. host path /opt/augustwest/homeassistant/config/
+  # (NOT /opt/augustwest/homeassistant/configuration.yaml). Write it BEFORE the
+  # first start so HA trusts the cloudflared reverse proxy from the outset;
+  # otherwise HA answers forwarded requests with "400: Bad Request" (surfacing as
+  # HTTP 502 at the tunnel) and the smarthome monitor stays DOWN. default_config:
+  # preserves the normal HA setup (UI, onboarding, integrations).
+  #
+  # trusted_proxies must include whatever bridge gateway cloudflared connects
+  # from. Docker assigns bridge-network gateways non-deterministically (172.17/
+  # 172.18/172.21/... depending on network creation order), so pinning ONE IP is
+  # fragile -- a differently-numbered gateway leaves HA rejecting every forwarded
+  # request. Trust the whole Docker private bridge range (172.16.0.0/12) instead,
+  # which covers every gateway Docker can hand out.
+  mkdir -p /opt/augustwest/homeassistant/config
+  cat > /opt/augustwest/homeassistant/config/configuration.yaml <<'EOF'
 default_config:
 
 http:
@@ -353,10 +408,11 @@ http:
     - ::1
     - 172.16.0.0/12
 EOF
-cd /opt/augustwest/homeassistant && run_quiet docker compose pull -q && run_quiet docker compose up -d
-# health: curl -o /dev/null -w '%{http_code}' http://127.0.0.1:8123/  -> 302
-ok "Smart Home hub ready."
-cd /root
+  cd /opt/augustwest/homeassistant && run_quiet docker compose pull -q && run_quiet docker compose up -d
+  # health: curl -o /dev/null -w '%{http_code}' http://127.0.0.1:8123/  -> 302
+  ok "Smart Home hub ready."
+  cd /root
+fi
 
 # ---------------------------------------------------------------------------
 # Step 6a — onboarding wizard (August West setup UI) -> 127.0.0.1:8888

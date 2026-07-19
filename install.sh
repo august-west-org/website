@@ -512,6 +512,75 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Step 6c — August West dashboard (customer PWA) -> 127.0.0.1:8889
+#   The installable phone dashboard: plain-English service status + a big
+#   "go dark" toggle. Source is NOT bundled with this script — pull it from the
+#   PUBLIC august-west-org/install repo (its dashboard/ subdirectory), exactly
+#   like the onboarding wizard above (tarball first, git sparse-checkout
+#   fallback; already-present source left untouched). Then install the host-side
+#   tunnel-control systemd units (so the loopback container can start/stop
+#   aw-cloudflared WITHOUT holding host root/systemd) and bring the container up.
+# ---------------------------------------------------------------------------
+DASH_DIR=/opt/augustwest/dashboard
+if [ -f "$DASH_DIR/docker-compose.yml" ]; then
+  note "Dashboard source already present — keeping it."
+else
+  say "Downloading your home dashboard..."
+  fetched=false
+
+  # Primary: branch tarball -> extract only the dashboard/ subdir (curl + tar).
+  tmp_tar="$(mktemp)"; tmp_ex="$(mktemp -d)"
+  if curl -fsSL -o "$tmp_tar" \
+       "https://codeload.github.com/${ONBOARD_REPO}/tar.gz/refs/heads/${ONBOARD_BRANCH}" >>"$LOG" 2>&1 \
+     && tar -xzf "$tmp_tar" -C "$tmp_ex" >>"$LOG" 2>&1; then
+    src_dir="$(find "$tmp_ex" -maxdepth 2 -type d -name dashboard | head -n1)"
+    if [ -n "$src_dir" ] && [ -f "$src_dir/docker-compose.yml" ]; then
+      mkdir -p "$DASH_DIR"
+      cp -a "$src_dir"/. "$DASH_DIR"/   # -a preserves dotfiles + host/ + icons
+      fetched=true
+    fi
+  fi
+  rm -rf "$tmp_tar" "$tmp_ex"
+
+  # Fallback: sparse git checkout of just the dashboard/ subdir.
+  if [ "$fetched" != true ] && command -v git >/dev/null 2>&1; then
+    note "Retrying the download via git..."
+    tmp_git="$(mktemp -d)"
+    if git clone --depth 1 --filter=blob:none --sparse \
+         "https://github.com/${ONBOARD_REPO}.git" "$tmp_git" >>"$LOG" 2>&1 \
+       && ( cd "$tmp_git" && git sparse-checkout set dashboard >>"$LOG" 2>&1 ) \
+       && [ -f "$tmp_git/dashboard/docker-compose.yml" ]; then
+      mkdir -p "$DASH_DIR"
+      cp -a "$tmp_git/dashboard/." "$DASH_DIR"/
+      fetched=true
+    fi
+    rm -rf "$tmp_git"
+  fi
+
+  if [ "$fetched" = true ]; then
+    ok "Dashboard downloaded."
+  else
+    echo "WARNING: could not download the dashboard from ${ONBOARD_REPO}" >&2
+    echo "         (dashboard/ subdir) — the dashboard will be skipped. The rest of" >&2
+    echo "         the stack still works; re-run once GitHub is reachable." >&2
+  fi
+fi
+
+if [ -f "$DASH_DIR/docker-compose.yml" ]; then
+  say "Setting up your home dashboard..."
+  # Host-side tunnel-control units: let the loopback dashboard container toggle
+  # aw-cloudflared on/off via a shared-file spool, without host root/systemd in
+  # the container. Idempotent (installs + enables the path/timer units).
+  if [ -f "$DASH_DIR/host/install.sh" ]; then
+    run_quiet bash "$DASH_DIR/host/install.sh"
+  fi
+  ( cd "$DASH_DIR" && run_quiet docker compose up -d --build )
+  ok "Home dashboard ready."
+else
+  echo "WARNING: $DASH_DIR/docker-compose.yml not found — dashboard NOT deployed." >&2
+fi
+
+# ---------------------------------------------------------------------------
 # Step 6b — public access via Cloudflare Tunnel
 #   Exposes the local services to the internet over a per-customer named tunnel:
 #     photos./vault./files./home./setup.<customer_domain>
@@ -566,6 +635,27 @@ if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
       systemctl restart aw-cloudflared.service 2>/dev/null || systemctl restart cloudflared 2>/dev/null || true
     else
       echo "WARNING: cloudflared rejected the edited ingress config; leaving tunnel as-is." >&2
+    fi
+  fi
+
+  # Ensure the customer dashboard's edge route exists too (dashboard-<domain> ->
+  # 127.0.0.1:8889). Same guarded injection as the setup route above, so an
+  # aw-tunnel-setup.sh that predates the dashboard still gets it.
+  if [ -f "$CF_CFG" ] && ! grep -q "dashboard-${CUSTOMER_DOMAIN}" "$CF_CFG"; then
+    echo "Adding dashboard-${CUSTOMER_DOMAIN} route to $CF_CFG ..." >> "$LOG"
+    tmp_cfg="$(mktemp)"
+    awk -v host="dashboard-${CUSTOMER_DOMAIN}" '
+      /- service: http_status:404/ && !done {
+        print "  - hostname: " host
+        print "    service: http://127.0.0.1:8889"
+        done=1
+      }
+      { print }
+    ' "$CF_CFG" > "$tmp_cfg" && mv "$tmp_cfg" "$CF_CFG"
+    if command -v cloudflared >/dev/null 2>&1 && cloudflared --config "$CF_CFG" tunnel ingress validate >> "$LOG" 2>&1; then
+      systemctl restart aw-cloudflared.service 2>/dev/null || systemctl restart cloudflared 2>/dev/null || true
+    else
+      echo "WARNING: cloudflared rejected the edited ingress config after adding the dashboard route; leaving tunnel as-is." >&2
     fi
   fi
   ok "Secure internet access configured."
@@ -833,6 +923,39 @@ if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
     qrencode -t ANSIUTF8 -m 2 "$SETUP_URL"
   else
     echo " (could not install qrencode — open the URL above to view the QR code)"
+  fi
+  echo "==============================================================="
+fi
+
+# ---------------------------------------------------------------------------
+# Step 9b — hand off the customer dashboard URL (deployed in Step 6c).
+#   No token in the URL: the dashboard is a login screen (August West master
+#   password). Printed alongside the setup wizard link above.
+# ---------------------------------------------------------------------------
+if [ -f "$DASH_DIR/docker-compose.yml" ]; then
+  DASHBOARD_URL="https://dashboard-${CUSTOMER_DOMAIN}/"
+  echo
+  echo "==============================================================="
+  echo " Your home dashboard"
+  echo "==============================================================="
+  echo " Add this to your phone's home screen to check on your home and take"
+  echo " it offline anytime. Sign in with your August West master password:"
+  echo
+  echo "   ${DASHBOARD_URL}"
+  echo
+  if [ "${TUNNEL_CONFIGURED:-false}" != true ]; then
+    echo " NOTE: the Cloudflare Tunnel is not configured yet, so this public URL"
+    echo "       will not resolve until it is. In the meantime reach it over"
+    echo "       Tailscale or an SSH tunnel:"
+    echo "         ssh -L 8889:127.0.0.1:8889 root@$(hostname -I 2>/dev/null | awk '{print $1}')"
+    echo "       then open http://127.0.0.1:8889/"
+    echo
+  fi
+  # qrencode was installed by the setup hand-off above when present; reuse it.
+  if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t ANSIUTF8 -m 2 "$DASHBOARD_URL"
+  else
+    echo " (install qrencode to view a scannable QR code of this URL)"
   fi
   echo "==============================================================="
 fi

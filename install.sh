@@ -30,6 +30,24 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
+# Step 0a — interactive prompts for required identity values
+#   CUSTOMER / PROVISION_TOKEN are required later (Step 5 trusted-domain,
+#   Step 8 registration) and previously failed hard via `:?` if unset. Prompt
+#   for them here when attached to a TTY so an operator can run this script by
+#   hand; non-interactive/CI runs must still export both or the `:?` guards
+#   below fail fast exactly as before.
+# ---------------------------------------------------------------------------
+if [ -t 0 ]; then
+  if [ -z "${CUSTOMER:-}" ]; then
+    read -r -p "Enter customer name (e.g. smith, jones): " CUSTOMER
+  fi
+  if [ -z "${PROVISION_TOKEN:-}" ]; then
+    read -r -s -p "Enter August West provisioning token: " PROVISION_TOKEN
+    echo
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Step 0 — scaffolding
 # ---------------------------------------------------------------------------
 mkdir -p /opt/augustwest/{immich,vaultwarden,nextcloud,homeassistant}
@@ -265,10 +283,16 @@ EOF
 # ./config dir above, i.e. host path /opt/augustwest/homeassistant/config/
 # (NOT /opt/augustwest/homeassistant/configuration.yaml). Write it BEFORE the
 # first start so HA trusts the cloudflared reverse proxy from the outset;
-# otherwise HA answers forwarded requests with "400: Bad Request" and the
-# smarthome monitor stays DOWN. default_config: preserves the normal HA setup
-# (UI, onboarding, integrations); 172.21.0.1 is the Docker bridge gateway
-# cloudflared connects from.
+# otherwise HA answers forwarded requests with "400: Bad Request" (surfacing as
+# HTTP 502 at the tunnel) and the smarthome monitor stays DOWN. default_config:
+# preserves the normal HA setup (UI, onboarding, integrations).
+#
+# trusted_proxies must include whatever bridge gateway cloudflared connects
+# from. Docker assigns bridge-network gateways non-deterministically (172.17/
+# 172.18/172.21/... depending on network creation order), so pinning ONE IP is
+# fragile -- a differently-numbered gateway leaves HA rejecting every forwarded
+# request. Trust the whole Docker private bridge range (172.16.0.0/12) instead,
+# which covers every gateway Docker can hand out.
 mkdir -p /opt/augustwest/homeassistant/config
 cat > /opt/augustwest/homeassistant/config/configuration.yaml <<'EOF'
 default_config:
@@ -278,11 +302,43 @@ http:
   trusted_proxies:
     - 127.0.0.1
     - ::1
-    - 172.21.0.1
+    - 172.16.0.0/12
 EOF
 cd /opt/augustwest/homeassistant && docker compose pull -q && docker compose up -d
 # health: curl -o /dev/null -w '%{http_code}' http://127.0.0.1:8123/  -> 302
 cd /root
+
+# ---------------------------------------------------------------------------
+# Step 6a — onboarding wizard (August West setup UI) -> 127.0.0.1:8888
+#   Runs as a container built from /opt/augustwest/onboarding (shipped alongside
+#   this script). The wizard's first screen is a health gate and its account
+#   step calls each service's API, so wait until all four answer their health
+#   checks before starting it. Loopback-only, like every other service; the
+#   Cloudflare Tunnel's setup-<customer_domain> route (added in Step 6b) is what
+#   exposes it. restart: unless-stopped keeps it up across reboots.
+# ---------------------------------------------------------------------------
+ONBOARD_DIR=/opt/augustwest/onboarding
+if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
+  echo "Waiting for all four services to become healthy before starting the wizard..."
+  healthy=0
+  for _ in $(seq 1 60); do
+    healthy=0
+    if curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:2283/api/server/ping; then healthy=$((healthy+1)); fi
+    if curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8443/alive;          then healthy=$((healthy+1)); fi
+    if curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8080/status.php;      then healthy=$((healthy+1)); fi
+    if curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8123/manifest.json;   then healthy=$((healthy+1)); fi
+    [ "$healthy" -eq 4 ] && break
+    sleep 5
+  done
+  if [ "$healthy" -ne 4 ]; then
+    echo "WARNING: only ${healthy}/4 services healthy after waiting; starting the wizard anyway (it re-checks health on load)." >&2
+  fi
+  ( cd "$ONBOARD_DIR" && docker compose up -d --build )
+  echo "Onboarding wizard container started (127.0.0.1:8888)."
+else
+  echo "WARNING: $ONBOARD_DIR/docker-compose.yml not found — onboarding wizard NOT deployed." >&2
+  echo "         Ship the onboarding/ directory alongside this script to enable it." >&2
+fi
 
 # ---------------------------------------------------------------------------
 # Step 6b — public access via Cloudflare Tunnel
@@ -300,6 +356,21 @@ BASE_DOMAIN="${BASE_DOMAIN:-augustwest.org}"
 CUSTOMER_DOMAIN="${CUSTOMER_DOMAIN:-${CUSTOMER}.${BASE_DOMAIN}}"
 : "${CF_API_TOKEN:=}"
 : "${CF_ZONE_ID:=}"
+
+# Prompt interactively for any missing value, but only if we have a TTY. Both
+# are optional -- leaving CF_API_TOKEN blank skips tunnel setup entirely (same
+# as the B2 prompts below), and CF_ZONE_ID is only asked for once a token was
+# actually given.
+if [ -t 0 ]; then
+  if [ -z "$CF_API_TOKEN" ]; then
+    read -r -s -p 'Cloudflare API token (blank to skip public tunnel setup): ' CF_API_TOKEN
+    echo
+  fi
+  if [ -n "$CF_API_TOKEN" ] && [ -z "$CF_ZONE_ID" ]; then
+    read -r -p 'Cloudflare zone ID: ' CF_ZONE_ID
+  fi
+fi
+
 TUNNEL_CONFIGURED=false
 if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
   echo "Configuring Cloudflare Tunnel for ${CUSTOMER_DOMAIN} ..."
@@ -308,6 +379,29 @@ if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
   CF_API_TOKEN="$CF_API_TOKEN" CF_ZONE_ID="$CF_ZONE_ID" \
     bash /tmp/aw-tunnel-setup.sh
   TUNNEL_CONFIGURED=true
+
+  # Ensure the onboarding wizard's edge route exists. Current aw-tunnel-setup.sh
+  # already writes setup-<customer_domain> -> 127.0.0.1:8888, but guard against
+  # an older tunnel script that predates it: if the route is missing, inject it
+  # just before the catch-all 404 rule, then re-validate + reload cloudflared.
+  CF_CFG=/etc/cloudflared/config.yml
+  if [ -f "$CF_CFG" ] && ! grep -q "setup-${CUSTOMER_DOMAIN}" "$CF_CFG"; then
+    echo "Adding setup-${CUSTOMER_DOMAIN} route to $CF_CFG ..."
+    tmp_cfg="$(mktemp)"
+    awk -v host="setup-${CUSTOMER_DOMAIN}" '
+      /- service: http_status:404/ && !done {
+        print "  - hostname: " host
+        print "    service: http://127.0.0.1:8888"
+        done=1
+      }
+      { print }
+    ' "$CF_CFG" > "$tmp_cfg" && mv "$tmp_cfg" "$CF_CFG"
+    if command -v cloudflared >/dev/null 2>&1 && cloudflared --config "$CF_CFG" tunnel ingress validate; then
+      systemctl restart aw-cloudflared.service 2>/dev/null || systemctl restart cloudflared 2>/dev/null || true
+    else
+      echo "WARNING: cloudflared rejected the edited ingress config; leaving tunnel as-is." >&2
+    fi
+  fi
 else
   echo "WARNING: CF_API_TOKEN / CF_ZONE_ID not set — Cloudflare Tunnel NOT configured." >&2
   echo "         Services stay reachable only via loopback/Tailscale. Re-run with both" >&2
@@ -512,6 +606,48 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-# Step 9 — see printed completion summary (service URLs + next steps)
+# Step 9 — completion summary + onboarding wizard hand-off
+#   Print the setup URL (and a scannable QR) the customer opens to run the
+#   wizard. The wizard mints its one-time setup token on first access, so poke a
+#   protected endpoint once to force token creation, then read it. The token is
+#   passed in the URL as ?t=... (the frontend stores it and strips it from the
+#   address bar).
 # ---------------------------------------------------------------------------
 echo "Install complete. Credentials in /root/augustwest-credentials.txt"
+
+if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
+  # Force the wizard to create its setup token (any authenticated route triggers
+  # it; the 403 we get back is expected and harmless).
+  curl -fsS -o /dev/null --max-time 5 -H 'X-Setup-Token: bootstrap' \
+    http://127.0.0.1:8888/api/state 2>/dev/null || true
+  SETUP_TOKEN="$(cat /etc/augustwest/onboarding_token 2>/dev/null || true)"
+
+  if [ "${TUNNEL_CONFIGURED:-false}" = true ]; then
+    SETUP_URL="https://setup-${CUSTOMER_DOMAIN}/?t=${SETUP_TOKEN}"
+  else
+    # No public tunnel: the wizard binds loopback only, so it's reached over
+    # Tailscale or an SSH tunnel (ssh -L 8888:127.0.0.1:8888 root@<host>).
+    SETUP_URL="http://127.0.0.1:8888/?t=${SETUP_TOKEN}"
+  fi
+
+  echo
+  echo "==============================================================="
+  echo " August West setup wizard"
+  echo "==============================================================="
+  echo " Open this on the customer's phone or laptop to finish setup:"
+  echo
+  echo "   ${SETUP_URL}"
+  echo
+  if [ "${TUNNEL_CONFIGURED:-false}" != true ]; then
+    echo " (loopback-only until the tunnel is set up — reach it via Tailscale"
+    echo "  or:  ssh -L 8888:127.0.0.1:8888 root@$(hostname -I 2>/dev/null | awk '{print $1}'))"
+    echo
+  fi
+  # Scannable QR, rendered in-terminal via the wizard image's bundled qrcode
+  # library (no extra host package needed).
+  docker exec augustwest_onboarding python -c \
+    "import qrcode,sys; qr=qrcode.QRCode(border=1); qr.add_data(sys.argv[1]); qr.make(); qr.print_ascii(invert=True)" \
+    "$SETUP_URL" 2>/dev/null \
+    || echo " (install 'qrencode' or open the URL above to view the QR code)"
+  echo "==============================================================="
+fi

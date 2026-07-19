@@ -617,18 +617,16 @@ echo "Install complete. Credentials in /root/augustwest-credentials.txt"
 
 if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
   # Force the wizard to create its setup token (any authenticated route triggers
-  # it; the 403 we get back is expected and harmless).
+  # it; the 403 we get back is expected and harmless), then read it back.
   curl -fsS -o /dev/null --max-time 5 -H 'X-Setup-Token: bootstrap' \
     http://127.0.0.1:8888/api/state 2>/dev/null || true
   SETUP_TOKEN="$(cat /etc/augustwest/onboarding_token 2>/dev/null || true)"
 
-  if [ "${TUNNEL_CONFIGURED:-false}" = true ]; then
-    SETUP_URL="https://setup-${CUSTOMER_DOMAIN}/?t=${SETUP_TOKEN}"
-  else
-    # No public tunnel: the wizard binds loopback only, so it's reached over
-    # Tailscale or an SSH tunnel (ssh -L 8888:127.0.0.1:8888 root@<host>).
-    SETUP_URL="http://127.0.0.1:8888/?t=${SETUP_TOKEN}"
-  fi
+  # The customer-facing setup URL. setup-${CUSTOMER_DOMAIN} is the Cloudflare
+  # Tunnel route configured above (= setup-${CUSTOMER}.augustwest.org with the
+  # default BASE_DOMAIN); the token is passed as ?t=... and the frontend stores
+  # it and strips it from the address bar.
+  SETUP_URL="https://setup-${CUSTOMER_DOMAIN}/?t=${SETUP_TOKEN}"
 
   echo
   echo "==============================================================="
@@ -639,15 +637,22 @@ if [ -f "$ONBOARD_DIR/docker-compose.yml" ]; then
   echo "   ${SETUP_URL}"
   echo
   if [ "${TUNNEL_CONFIGURED:-false}" != true ]; then
-    echo " (loopback-only until the tunnel is set up — reach it via Tailscale"
-    echo "  or:  ssh -L 8888:127.0.0.1:8888 root@$(hostname -I 2>/dev/null | awk '{print $1}'))"
+    echo " NOTE: the Cloudflare Tunnel is not configured yet, so this public URL"
+    echo "       will not resolve until it is. In the meantime reach the wizard"
+    echo "       over Tailscale or an SSH tunnel:"
+    echo "         ssh -L 8888:127.0.0.1:8888 root@$(hostname -I 2>/dev/null | awk '{print $1}')"
+    echo "       then open http://127.0.0.1:8888/?t=${SETUP_TOKEN}"
     echo
   fi
-  # Scannable QR, rendered in-terminal via the wizard image's bundled qrcode
-  # library (no extra host package needed).
-  docker exec augustwest_onboarding python -c \
-    "import qrcode,sys; qr=qrcode.QRCode(border=1); qr.add_data(sys.argv[1]); qr.make(); qr.print_ascii(invert=True)" \
-    "$SETUP_URL" 2>/dev/null \
-    || echo " (install 'qrencode' or open the URL above to view the QR code)"
+  # Scannable QR of the setup URL, rendered in-terminal with qrencode.
+  if ! command -v qrencode >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get install -y -qq qrencode >/dev/null 2>&1 || true
+  fi
+  if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t ANSIUTF8 -m 2 "$SETUP_URL"
+  else
+    echo " (could not install qrencode — open the URL above to view the QR code)"
+  fi
   echo "==============================================================="
 fi

@@ -658,6 +658,48 @@ if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ZONE_ID" ]; then
       echo "WARNING: cloudflared rejected the edited ingress config after adding the dashboard route; leaving tunnel as-is." >&2
     fi
   fi
+
+  # The dashboard's edge route is added ABOVE (to config.yml), but its public DNS
+  # record is NOT — aw-tunnel-setup.sh only knows about photos/vault/files/home/
+  # setup, so the dashboard-<customer_domain> CNAME never gets created there.
+  # Without it the hostname resolves to nothing and the tunnel route is dead.
+  # Create it here the same way aw-tunnel-setup.sh does for the other services:
+  # upsert a single proxied CNAME dashboard-<customer_domain> ->
+  # <tunnel-id>.cfargotunnel.com via the Cloudflare DNS API. Idempotent — reuse
+  # the existing record if present, otherwise create it.
+  DASH_HOST="dashboard-${CUSTOMER_DOMAIN}"
+  TUNNEL_ID="$(cat /etc/cloudflared/tunnel-id 2>/dev/null || true)"
+  if [ -n "$TUNNEL_ID" ]; then
+    echo "Creating DNS CNAME ${DASH_HOST} -> ${TUNNEL_ID}.cfargotunnel.com ..." >> "$LOG"
+    CF_API="https://api.cloudflare.com/client/v4"
+    cf_dns() {  # METHOD PATH [JSON_BODY] -> prints Cloudflare API response body
+      local method="$1" path="$2" body="${3:-}"
+      if [ -n "$body" ]; then
+        curl -sS -X "$method" "${CF_API}${path}" \
+          -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          -H "Content-Type: application/json" --data "$body"
+      else
+        curl -sS -X "$method" "${CF_API}${path}" \
+          -H "Authorization: Bearer ${CF_API_TOKEN}"
+      fi
+    }
+    dash_target="${TUNNEL_ID}.cfargotunnel.com"
+    dash_rid="$(cf_dns GET "/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${DASH_HOST}" \
+                  | jq -r '.result[0].id // empty' 2>/dev/null || true)"
+    dash_body="$(jq -nc --arg n "$DASH_HOST" --arg c "$dash_target" \
+                   '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1}')"
+    if [ -n "$dash_rid" ]; then
+      cf_dns PUT "/zones/${CF_ZONE_ID}/dns_records/${dash_rid}" "$dash_body" >> "$LOG" 2>&1 \
+        && echo "  CNAME ${DASH_HOST} -> ${dash_target} (updated)" >> "$LOG"
+    else
+      cf_dns POST "/zones/${CF_ZONE_ID}/dns_records" "$dash_body" >> "$LOG" 2>&1 \
+        && echo "  CNAME ${DASH_HOST} -> ${dash_target} (created)" >> "$LOG"
+    fi
+  else
+    echo "WARNING: /etc/cloudflared/tunnel-id not found — dashboard DNS record NOT created;" >&2
+    echo "         dashboard-${CUSTOMER_DOMAIN} will not resolve until the tunnel is set up." >&2
+  fi
+
   ok "Secure internet access configured."
 else
   note "Secure internet access not set up yet — your apps work locally for now."
